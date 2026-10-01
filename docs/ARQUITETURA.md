@@ -182,7 +182,7 @@ alerts_log           id, signal_id, channel, sent_at, status
 - Saída: texto estruturado (contexto, por que o setup, o que invalida, riscos).
 - Proibido à IA: criar/alterar níveis de entrada, stop ou alvo.
 - Modelo configurável por env var; gerado sob demanda ou só para sinais novos (controle de custo).
-- Provedor: **OpenRouter** (mesmo padrão do projeto `palpitaria`: SDK compatível OpenAI + `base_url`), créditos pré-pagos como teto de gasto. Modelo inicial: Claude Sonnet via OpenRouter — **[VERIFICAR ID exato do modelo no catálogo do OpenRouter na implementação]**.
+- Provedor: **OpenRouter** (mesmo padrão do projeto `palpitaria`: SDK compatível OpenAI + `base_url`), créditos pré-pagos como teto de gasto. Modelo: apelido `~anthropic/claude-sonnet-latest` (decisão do usuário, 2026-10-01; em 2026-10-01 custava US$ 2/M entrada e US$ 10/M saída). Como o apelido pode mudar de modelo/preço sem aviso, registrar em `ai_analyses` o modelo efetivamente usado e o custo de cada chamada, conforme retornado pela resposta do OpenRouter **[VERIFICAR campos da resposta na implementação]**.
 - Cliente encapsulado em `ai/` para permitir trocar de provedor sem mexer no resto.
 
 ## 10. Roadmap da V1
