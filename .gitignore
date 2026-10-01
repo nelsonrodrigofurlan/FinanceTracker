@@ -1,0 +1,37 @@
+# Segredos — NUNCA versionar
+.env
+.env.*
+!.env.example
+*.pem
+credentials*.json
+service-account*.json
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Dados locais / cache de backtest
+data/cache/
+*.parquet
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+
+# SO / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
