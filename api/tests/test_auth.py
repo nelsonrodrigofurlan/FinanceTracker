@@ -125,3 +125,8 @@ def test_candles_rejects_invalid_ticker(client):
     headers = {"Authorization": f"Bearer {token}"}
     assert client.get("/market/candles/petr4;drop", headers=headers).status_code == 422
     assert client.get("/market/candles/PETR4?range=10y", headers=headers).status_code == 422
+
+
+def test_lab_routes_require_auth(client):
+    assert client.get("/lab/runs").status_code == 401
+    assert client.get("/lab/runs/1").status_code == 401

@@ -51,11 +51,31 @@ def rsi(values: pd.Series, n: int) -> pd.Series:
 
 
 def _rsi_value(avg_gain: float, avg_loss: float) -> float:
-    if avg_loss == 0:
-        return 50.0 if avg_gain == 0 else 100.0
-    return 100.0 - 100.0 / (1.0 + avg_gain / avg_loss)
+    total = avg_gain + avg_loss
+    if total == 0:
+        return 50.0
+    # Equivale a 100 − 100 / (1 + ganho/perda), sem dividir por perdas quase nulas.
+    return 100.0 * avg_gain / total
 
 
 def _check_period(n: int) -> None:
     if n < 1:
         raise ValueError("Período precisa ser >= 1")
+
+
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int) -> pd.Series:
+    """ATR de Wilder: média suavizada (1/n) do true range, semeada pela média simples dos
+    n primeiros true ranges. O primeiro candle não tem fechamento anterior → TR = máx − mín."""
+    _check_period(n)
+    h = high.to_numpy(dtype="float64")
+    lo = low.to_numpy(dtype="float64")
+    c = close.to_numpy(dtype="float64")
+    out = np.full(len(h), np.nan)
+    if len(h) < n:
+        return pd.Series(out, index=high.index)
+    prev_close = np.concatenate(([np.nan], c[:-1]))
+    tr = np.nanmax(np.vstack([h - lo, np.abs(h - prev_close), np.abs(lo - prev_close)]), axis=0)
+    out[n - 1] = tr[:n].mean()
+    for i in range(n, len(tr)):
+        out[i] = (out[i - 1] * (n - 1) + tr[i]) / n
+    return pd.Series(out, index=high.index)

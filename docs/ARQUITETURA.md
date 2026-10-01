@@ -167,7 +167,10 @@ Só operar compra se `BOVA11 > MMA({200})`. Medido com e sem.
 - Se stop e alvo forem tocados no mesmo candle, assume-se o **stop** (premissa conservadora).
 - **Quebra de série:** intervalo > 30 dias corridos sem candle (ex.: NATU3 sem negociação de 2019 a 2025, reestruturação societária) → o backtest usa **apenas o trecho após a última quebra**.
 - Pregões ausentes na fonte (ex.: Yahoo sem 30/09/2026 para BOVA11/SMAL11) são detectados pelo pipeline (`stats.quality.missing_sessions`) e não são preenchidos artificialmente.
-- Custos configuráveis: corretagem (Clear: zero **[VERIFICAR condições atuais]**), emolumentos/taxas B3 **[VERIFICAR valores atuais]**, slippage `{0,1%}` por lado.
+- Custos configuráveis (verificados em 2026-10-01):
+  - Corretagem Clear: **R$ 0** para swing trade em ações (site oficial da Clear; usuário confirma na conta).
+  - Taxas B3, operações regulares, faixa ADTV até R$ 3 mi: **negociação 0,00500% + CCP 0,02240% = 0,0274% por lado** (documento B3 "Tarifação de Produtos de Renda Variável").
+  - Slippage: 0,1% por lado (premissa conservadora).
 - IR: calculado à parte, no relatório mensal (swing trade: 15% sobre lucro líquido; isenção para vendas de ações à vista até R$ 20 mil/mês) **[VERIFICAR regras vigentes com contador]**.
 
 ### 7.2 Métricas

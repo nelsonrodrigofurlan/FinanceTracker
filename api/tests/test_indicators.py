@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import pytest
 
-from ft.indicators.core import ema, rsi, sma
+from ft.indicators.core import atr, ema, rsi, sma
 
 S = pd.Series([10.0, 11.0, 12.0, 11.0, 13.0, 14.0])
 
@@ -57,3 +57,16 @@ def test_short_series_returns_nan():
 def test_invalid_period():
     with pytest.raises(ValueError):
         sma(S, 0)
+
+
+def test_atr_wilder_hand_computed():
+    high = pd.Series([10.0, 12.0, 13.0, 12.5])
+    low = pd.Series([9.0, 10.0, 11.0, 10.0])
+    close = pd.Series([9.5, 11.5, 12.0, 10.5])
+    # TR: [1 (sem fechamento anterior), max(2, 2.5, 0.5)=2.5,
+    #      max(2, 1.5, 0.5)=2, max(2.5, 0.5, 2)=2.5]
+    out = atr(high, low, close, 2)
+    assert math.isnan(out[0])
+    assert out[1] == pytest.approx((1 + 2.5) / 2)  # 1.75
+    assert out[2] == pytest.approx((1.75 * 1 + 2) / 2)  # 1.875
+    assert out[3] == pytest.approx((1.875 * 1 + 2.5) / 2)  # 2.1875
