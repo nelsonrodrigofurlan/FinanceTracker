@@ -64,6 +64,9 @@ Build: padrão do projeto `poc-app-cursor-1` (docker build → Artifact Registry
 ## 4. Segurança
 
 - **Auth:** Supabase Auth, e-mail + senha + **MFA TOTP obrigatório**; signup público desligado; usuário criado manualmente no painel.
+- **Sessão no web:** toda a autenticação roda no servidor (Server Functions + `src/proxy.ts`); o navegador não recebe chave do Supabase; cookie de sessão `httpOnly`, `SameSite=Lax`, `Secure` em produção, 7 dias. O proxy valida o JWT (`getClaims`) e exige `aal2` em todas as rotas, exceto `/login` e `/mfa`; o layout da área logada repete a checagem (defesa em profundidade).
+- **CSP com nonce** por requisição (`script-src 'nonce-…' 'strict-dynamic'`), o que torna todas as páginas dinâmicas.
+- **API:** valida JWT ES256 via JWKS, `iss`/`aud`/`exp`, `aal2` e allowlist `ALLOWED_USER_IDS` (vazia = bloqueia todos). Erros sempre genéricos (401 "Não autorizado").
 - **API privada:** `ft-api` no Cloud Run **sem acesso público** (`--no-allow-unauthenticated`); só a service account do `ft-web` tem `roles/run.invoker`. O navegador nunca fala com a API diretamente.
 - **Web → API (defesa em profundidade):** o servidor Next.js chama a API com ID token do Google (IAM) **e** repassa o JWT do Supabase; a API valida assinatura/expiração e confere se o `sub` é o usuário autorizado (allowlist por env var).
 - **RLS** em todas as tabelas com dados do usuário (`user_id = auth.uid()`). Tabelas de mercado (candles, ativos) são somente leitura para `authenticated`; escrita apenas via service role (pipeline).

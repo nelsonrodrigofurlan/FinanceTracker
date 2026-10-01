@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -17,7 +18,10 @@ export const metadata: Metadata = {
   description: "Análise técnica pessoal — swing trade B3",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // CSP com nonce exige renderização dinâmica em todas as páginas (ver src/proxy.ts).
+  await connection();
+
   return (
     <html
       lang="pt-BR"

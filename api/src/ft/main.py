@@ -1,8 +1,10 @@
 import logging
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from ft import __version__
+from ft.auth import CurrentUser, require_user
 from ft.config import get_settings
 
 
@@ -21,6 +23,10 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["infra"])
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__, "env": settings.app_env}
+
+    @app.get("/me", tags=["auth"])
+    def me(user: Annotated[CurrentUser, Depends(require_user)]) -> dict[str, str]:
+        return {"user_id": user.user_id, "aal": user.aal}
 
     return app
 
