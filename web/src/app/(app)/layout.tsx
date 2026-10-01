@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { signOut } from "@/app/mfa/actions";
+import { isAllowedUser } from "@/lib/allowlist";
 import { getVerifiedSession } from "@/lib/supabase/server";
 
 // Defesa em profundidade: além do proxy, toda página da área logada exige sessão aal2.
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const session = await getVerifiedSession();
-  if (!session) redirect("/login");
+  if (!session || !isAllowedUser(session.userId)) redirect("/login");
   if (session.aal !== "aal2") redirect("/mfa");
 
   return (

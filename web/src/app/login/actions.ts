@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { isAllowedUser } from "@/lib/allowlist";
 import { createClient } from "@/lib/supabase/server";
 
 export type LoginState = { error: string | null };
@@ -15,10 +16,11 @@ export async function signIn(_prev: LoginState, formData: FormData): Promise<Log
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error) {
-    // Mensagem genérica: não revelar se o e-mail existe.
+  if (error || !isAllowedUser(data.user?.id)) {
+    if (!error) await supabase.auth.signOut();
+    // Mensagem genérica: não revelar se o e-mail existe nem se o usuário é autorizado.
     return { error: "Credenciais inválidas." };
   }
 

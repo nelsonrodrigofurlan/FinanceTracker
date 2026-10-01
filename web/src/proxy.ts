@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isAllowedUser } from "@/lib/allowlist";
 import { sessionCookieOptions } from "@/lib/supabase/cookie-options";
 
 const PUBLIC_PATHS = ["/login"];
@@ -71,7 +72,11 @@ export async function proxy(request: NextRequest) {
   };
 
   let result: NextResponse = response;
-  if (!claims) {
+  if (claims && !isAllowedUser(claims.sub)) {
+    // Sessão válida de um usuário não autorizado: encerra e volta ao login.
+    await supabase.auth.signOut();
+    result = PUBLIC_PATHS.includes(path) ? response : redirectTo("/login");
+  } else if (!claims) {
     if (!PUBLIC_PATHS.includes(path)) result = redirectTo("/login");
   } else if (aal !== "aal2") {
     // Logado só com senha: obrigatório passar pelo 2FA.
