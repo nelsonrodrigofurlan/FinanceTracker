@@ -1,0 +1,53 @@
+# FinanceTracker Web — Cloud Build → Artifact Registry → Cloud Run
+#
+# Gatilhos (um por branch), arquivo de configuração: /infra/cloudbuild-web.yaml
+#   main      → _APP_ENV=production  _SUFFIX=(vazio)
+#   developer → _APP_ENV=staging     _SUFFIX=-staging
+# Filtro de arquivos incluídos no gatilho: web/**
+#
+# Os DEFAULTS abaixo apontam para STAGING de propósito.
+# O web é público (página de login); o acesso aos dados é protegido pelo login (F1).
+
+steps:
+  - id: Build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/ft-web:$COMMIT_SHA
+      - web
+
+  - id: Push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/ft-web:$COMMIT_SHA
+
+  - id: DeployWeb
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ft-web${_SUFFIX}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/ft-web:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-web@$PROJECT_ID.iam.gserviceaccount.com
+      - --allow-unauthenticated
+      - --set-env-vars=APP_ENV=${_APP_ENV}
+      - --memory=512Mi
+      - --min-instances=0
+      - --max-instances=2
+      - --quiet
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/ft-web:$COMMIT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: southamerica-east1
+  _AR_REPO: finance-tracker
+  _APP_ENV: staging
+  _SUFFIX: -staging
