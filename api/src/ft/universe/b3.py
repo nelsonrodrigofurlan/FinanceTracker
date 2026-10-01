@@ -25,15 +25,20 @@ def build_url(index: str = "IBXX") -> str:
     return URL.format(payload=encoded)
 
 
-def parse_portfolio(data: dict) -> list[str]:
-    tickers = sorted({str(item.get("cod", "")).strip().upper() for item in data.get("results", [])})
-    valid = [t for t in tickers if TICKER_RE.match(t)]
-    if len(valid) < 50:
-        raise ValueError(f"Composição suspeita: só {len(valid)} tickers válidos")
-    return valid
+def parse_portfolio(data: dict) -> dict[str, str | None]:
+    """Retorna {ticker: nome da empresa} em ordem alfabética de ticker."""
+    names: dict[str, str | None] = {}
+    for item in data.get("results", []):
+        ticker = str(item.get("cod", "")).strip().upper()
+        if TICKER_RE.match(ticker):
+            name = " ".join(str(item.get("asset") or "").split()) or None
+            names[ticker] = name
+    if len(names) < 50:
+        raise ValueError(f"Composição suspeita: só {len(names)} tickers válidos")
+    return dict(sorted(names.items()))
 
 
-def fetch_ibrx100(timeout: float = 20) -> list[str]:
+def fetch_ibrx100(timeout: float = 20) -> dict[str, str | None]:
     url = build_url()
     if not url.startswith("https://"):
         raise ValueError("URL da B3 precisa ser https")

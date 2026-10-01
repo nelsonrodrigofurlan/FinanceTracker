@@ -131,13 +131,17 @@ def test_new_split_requires_full_reload():
 
 def test_parse_portfolio_filters_and_sorts():
     results = [{"cod": f"TK{chr(65 + i // 26)}{chr(65 + i % 26)}3"} for i in range(60)]
-    results += [{"cod": "invalido"}, {"cod": " petr4 "}, {"cod": "B3SA3"}, {"cod": "KLBN11"}]
-    tickers = parse_portfolio({"results": results})
+    results += [{"cod": "invalido"}, {"cod": " petr4 ", "asset": "PETROBRAS  "}]
+    results += [{"cod": "B3SA3"}, {"cod": "KLBN11"}]
+    names = parse_portfolio({"results": results})
+    tickers = list(names)
     assert "PETR4" in tickers
     assert "B3SA3" in tickers  # raiz com dígito
     assert "KLBN11" in tickers  # unit
     assert "INVALIDO" not in tickers
     assert tickers == sorted(tickers)
+    assert names["PETR4"] == "PETROBRAS"
+    assert names["B3SA3"] is None
 
 
 def test_parse_portfolio_rejects_suspicious_composition():

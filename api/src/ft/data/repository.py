@@ -9,7 +9,10 @@ from psycopg.types.json import Jsonb
 
 from ft.data.yahoo import SOURCE, DailyHistory, to_yahoo_symbol
 
-BENCHMARKS = {"BOVA11": "etf", "SMAL11": "etf"}
+BENCHMARKS = {
+    "BOVA11": ("etf", "ISHARES IBOVESPA"),
+    "SMAL11": ("etf", "ISHARES SMALL CAP"),
+}
 
 
 def _dec(value: float, places: int) -> Decimal:
@@ -17,16 +20,21 @@ def _dec(value: float, places: int) -> Decimal:
 
 
 def ensure_asset(
-    conn: psycopg.Connection, ticker: str, asset_type: str = "stock", is_benchmark: bool = False
+    conn: psycopg.Connection,
+    ticker: str,
+    asset_type: str = "stock",
+    is_benchmark: bool = False,
+    name: str | None = None,
 ) -> int:
     row = conn.execute(
         """
-        insert into ft.assets (ticker, yahoo_symbol, type, is_benchmark)
-        values (%s, %s, %s, %s)
-        on conflict (ticker) do update set updated_at = now()
+        insert into ft.assets (ticker, yahoo_symbol, type, is_benchmark, name)
+        values (%s, %s, %s, %s, %s)
+        on conflict (ticker) do update set
+            name = coalesce(excluded.name, ft.assets.name), updated_at = now()
         returning id
         """,
-        (ticker, to_yahoo_symbol(ticker), asset_type, is_benchmark),
+        (ticker, to_yahoo_symbol(ticker), asset_type, is_benchmark, name),
     ).fetchone()
     return int(row[0])
 

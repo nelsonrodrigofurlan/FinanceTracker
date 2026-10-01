@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
@@ -6,7 +8,14 @@ from fastapi import Depends, FastAPI
 from ft import __version__
 from ft.auth import CurrentUser, require_user
 from ft.config import get_settings
+from ft.db.pool import close_pool
 from ft.market_api import router as market_router
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    yield
+    close_pool()
 
 
 def create_app() -> FastAPI:
@@ -19,6 +28,7 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.expose_docs else None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.expose_docs else None,
+        lifespan=lifespan,
     )
 
     @app.get("/health", tags=["infra"])

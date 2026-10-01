@@ -107,6 +107,7 @@ Interface `DataProvider` com as duas implementações; fallback automático e lo
 - `fin_volume` = `close × volume` (aproximação; Yahoo não fornece volume financeiro oficial).
 - Banco: schema `ft` (não exposto pelo PostgREST), RLS ligado sem políticas, sem privilégios para `anon`/`authenticated`. Migrations em `supabase/migrations/`, aplicadas por `python -m ft.db.migrate` (trava: URL do banco precisa conter o `SUPABASE_PROJECT_REF`; produção exige `--allow-production`).
 - **[VERIFICAR no deploy]** o host direto `db.<ref>.supabase.co` só resolve IPv6; Cloud Run precisa da URL do *pooler* (IPv4) do Supabase.
+- **[VERIFICAR região]** latência TCP local → banco de teste ≈ 186 ms (típico de Brasil → EUA), sugerindo que o projeto não está em `sa-east-1`. Cloud Run deve ficar na **mesma região do Supabase de produção** (o caminho app → banco tem várias idas e voltas por página). API usa pool de conexões (`psycopg-pool`) e carrega só a janela do gráfico + ~400 pregões de aquecimento.
 
 ### 5.3 Universo de ativos
 - Candidatos: composição do **IBrX-100** obtida do endpoint que alimenta o site da B3 (não é API oficial; se falhar, reutiliza os candidatos do último snapshot).

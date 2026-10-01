@@ -62,7 +62,7 @@ def refresh_universe(
     today: date,
     criteria: LiquidityCriteria,
     fetch: Fetcher = fetch_daily,
-    fetch_candidates: Callable[[], list[str]] = fetch_ibrx100,
+    fetch_candidates: Callable[[], dict[str, str | None]] = fetch_ibrx100,
     force: bool = False,
 ) -> dict:
     """Recalcula o universo uma vez por mês. Retorna estatísticas."""
@@ -72,18 +72,20 @@ def refresh_universe(
         return {"refreshed": False, "selected": len(snapshot[2])}
 
     try:
-        candidates = fetch_candidates()
+        names = fetch_candidates()
+        candidates = list(names)
         source = "b3_ibrx100"
     except Exception as exc:  # noqa: BLE001
         if not snapshot:
             raise RuntimeError("Sem composição do IBrX-100 e sem snapshot anterior") from exc
         logger.warning("B3 indisponível (%s); reutilizando candidatos do último snapshot", exc)
         candidates, source = snapshot[1], "snapshot_anterior"
+        names = dict.fromkeys(candidates)
 
     fin_volumes, errors = {}, {}
     for ticker in candidates:
         try:
-            asset_id = repo.ensure_asset(conn, ticker)
+            asset_id = repo.ensure_asset(conn, ticker, name=names.get(ticker))
             update_asset(conn, asset_id, ticker, fetch)
             fin_volumes[ticker] = repo.fin_volume_series(conn, asset_id, criteria.window)
         except Exception as exc:  # noqa: BLE001 — um ativo com problema não derruba o job
@@ -113,8 +115,8 @@ def run(fetch: Fetcher = fetch_daily, force_universe: bool = False) -> int:
         run_id = repo.start_run(conn, "daily")
         stats: dict = {}
         try:
-            for ticker, asset_type in repo.BENCHMARKS.items():
-                repo.ensure_asset(conn, ticker, asset_type, is_benchmark=True)
+            for ticker, (asset_type, name) in repo.BENCHMARKS.items():
+                repo.ensure_asset(conn, ticker, asset_type, is_benchmark=True, name=name)
             conn.commit()
 
             stats["universe"] = refresh_universe(

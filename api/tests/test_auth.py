@@ -113,3 +113,15 @@ def test_error_message_is_generic(client):
 def test_market_status_requires_auth(client):
     assert client.get("/market/status").status_code == 401
     assert client.get("/market/status", headers={"Authorization": "Bearer x"}).status_code == 401
+
+
+def test_market_routes_require_auth(client):
+    assert client.get("/market/assets").status_code == 401
+    assert client.get("/market/candles/PETR4").status_code == 401
+
+
+def test_candles_rejects_invalid_ticker(client):
+    token = make_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/market/candles/petr4;drop", headers=headers).status_code == 422
+    assert client.get("/market/candles/PETR4?range=10y", headers=headers).status_code == 422

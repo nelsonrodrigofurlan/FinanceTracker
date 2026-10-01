@@ -1,11 +1,12 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { ChartCandlestick, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { mainNav, secondaryNav } from "@/components/nav";
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -14,7 +15,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 
-export function CommandMenu() {
+export type CommandAsset = { ticker: string; name: string | null };
+
+export function CommandMenu({ assets }: { assets: CommandAsset[] }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
@@ -51,19 +54,36 @@ export function CommandMenu() {
         title="Busca"
         description="Busque um ativo ou navegue para uma tela"
       >
-        <CommandInput placeholder="Digite um ticker (ex.: PETR4) ou uma tela" />
-        <CommandList>
-          <CommandEmpty>Nada encontrado. A busca de ativos chega com os dados de mercado.</CommandEmpty>
-          <CommandGroup heading="Telas">
-            {[...mainNav, ...secondaryNav].map((item) => (
-              <CommandItem key={item.href} value={item.title} onSelect={() => go(item.href)}>
-                <item.icon />
-                <span>{item.title}</span>
-                <span className="text-muted-foreground ml-auto text-xs">{item.description}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
+        <Command>
+          <CommandInput placeholder="Digite um ticker (ex.: PETR4) ou uma tela" />
+          <CommandList>
+            <CommandEmpty>Nada encontrado.</CommandEmpty>
+            {assets.length > 0 && (
+              <CommandGroup heading="Ativos">
+                {assets.map((a) => (
+                  <CommandItem
+                    key={a.ticker}
+                    value={`${a.ticker} ${a.name ?? ""}`}
+                    onSelect={() => go(`/ativos/${a.ticker}`)}
+                  >
+                    <ChartCandlestick />
+                    <span className="font-medium">{a.ticker}</span>
+                    <span className="text-muted-foreground ml-auto text-xs">{a.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading="Telas">
+              {[...mainNav, ...secondaryNav].map((item) => (
+                <CommandItem key={item.href} value={item.title} onSelect={() => go(item.href)}>
+                  <item.icon />
+                  <span>{item.title}</span>
+                  <span className="text-muted-foreground ml-auto text-xs">{item.description}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
       </CommandDialog>
     </>
   );
