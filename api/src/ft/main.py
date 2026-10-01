@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI
 from ft import __version__
 from ft.auth import CurrentUser, require_user
 from ft.config import get_settings
+from ft.market_api import router as market_router
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,8 @@ def create_app() -> FastAPI:
     @app.get("/me", tags=["auth"])
     def me(user: Annotated[CurrentUser, Depends(require_user)]) -> dict[str, str]:
         return {"user_id": user.user_id, "aal": user.aal}
+
+    app.include_router(market_router)
 
     return app
 

@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     supabase_url: str = ""
     supabase_jwks_url: str = ""
+    supabase_project_ref: str = ""
+    supabase_db_url: str = ""
     # IDs (UUID) de usuários autorizados, separados por vírgula. Vazio = ninguém (fail-closed).
     allowed_user_ids: Annotated[frozenset[str], NoDecode] = frozenset()
 

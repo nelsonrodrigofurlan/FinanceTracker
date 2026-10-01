@@ -32,6 +32,14 @@ uv run pytest
 uv run uvicorn ft.main:app --reload --port 8000
 ```
 
+Banco e dados (sempre no projeto Supabase do `.env`, que é o de TESTE):
+```bash
+cd api
+uv run python -m ft.db.migrate --status
+uv run python -m ft.db.migrate
+uv run python -m ft.pipeline
+```
+
 Web:
 ```bash
 cd web

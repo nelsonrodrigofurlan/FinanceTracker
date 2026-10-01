@@ -36,9 +36,3 @@ def test_docs_available_outside_production(monkeypatch):
     client = TestClient(create_app())
 
     assert client.get("/openapi.json").status_code == 200
-
-
-def test_pipeline_runs():
-    from ft.pipeline import run
-
-    assert run() == 0

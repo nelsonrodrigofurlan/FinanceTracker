@@ -99,7 +99,17 @@ Interface `DataProvider` com as duas implementações; fallback automático e lo
 - Guardar preço bruto **e** ajustado (proventos/desdobramentos). Backtest usa ajustado; sinais e ordens usam bruto.
 - Validação de qualidade: candles faltantes, OHLC inconsistente (high < low), saltos > X% sem evento corporativo → marcar e alertar.
 
+### 5.2.1 Implementação (F2, 2026-10-01)
+- Fonte única por ora: Yahoo (`yfinance` 1.7). Convenção verificada: `Close` ajustado só por desdobramentos (usado em sinais); `Adj Close` ajustado também por proventos (usado no backtest).
+- Candle do dia só é gravado após **18h30 BRT** (antes disso pode ser parcial).
+- Coleta diária incremental (últimos 10 dias). **Provento ou desdobramento novo → recarga completa do ativo**, porque o Yahoo reajusta todo o histórico.
+- Linhas inválidas (OHLC inconsistente, preço ≤ 0, valores ausentes) são descartadas e contadas no `pipeline_runs.stats`, nunca "corrigidas".
+- `fin_volume` = `close × volume` (aproximação; Yahoo não fornece volume financeiro oficial).
+- Banco: schema `ft` (não exposto pelo PostgREST), RLS ligado sem políticas, sem privilégios para `anon`/`authenticated`. Migrations em `supabase/migrations/`, aplicadas por `python -m ft.db.migrate` (trava: URL do banco precisa conter o `SUPABASE_PROJECT_REF`; produção exige `--allow-production`).
+- **[VERIFICAR no deploy]** o host direto `db.<ref>.supabase.co` só resolve IPv6; Cloud Run precisa da URL do *pooler* (IPv4) do Supabase.
+
 ### 5.3 Universo de ativos
+- Candidatos: composição do **IBrX-100** obtida do endpoint que alimenta o site da B3 (não é API oficial; se falhar, reutiliza os candidatos do último snapshot).
 - Critério: volume financeiro médio de 21 pregões ≥ **R$ 30 mi** (parâmetro configurável). É o volume negociado **pelo mercado inteiro** no papel por dia — filtro de liquidez, sem relação com o capital do usuário.
 - Recalculado mensalmente; snapshot salvo (`universe_snapshots`) para reduzir viés de sobrevivência em backtests futuros.
 - Referência de mercado: BOVA11 (filtro de regime) e SMAL11.
@@ -154,6 +164,8 @@ Só operar compra se `BOVA11 > MMA({200})`. Medido com e sem.
 - Execução candle a candle, sem olhar o futuro (*no look-ahead*): sinal no candle `t` só executa a partir de `t` (fechamento) ou `t+1`.
 - **Gap contra o stop:** se a abertura já estiver abaixo do stop, a saída é na abertura (não no preço do stop).
 - Se stop e alvo forem tocados no mesmo candle, assume-se o **stop** (premissa conservadora).
+- **Quebra de série:** intervalo > 30 dias corridos sem candle (ex.: NATU3 sem negociação de 2019 a 2025, reestruturação societária) → o backtest usa **apenas o trecho após a última quebra**.
+- Pregões ausentes na fonte (ex.: Yahoo sem 30/09/2026 para BOVA11/SMAL11) são detectados pelo pipeline (`stats.quality.missing_sessions`) e não são preenchidos artificialmente.
 - Custos configuráveis: corretagem (Clear: zero **[VERIFICAR condições atuais]**), emolumentos/taxas B3 **[VERIFICAR valores atuais]**, slippage `{0,1%}` por lado.
 - IR: calculado à parte, no relatório mensal (swing trade: 15% sobre lucro líquido; isenção para vendas de ações à vista até R$ 20 mil/mês) **[VERIFICAR regras vigentes com contador]**.
 

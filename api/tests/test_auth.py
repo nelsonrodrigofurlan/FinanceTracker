@@ -108,3 +108,8 @@ def test_hs256_token_rejected(client):
 def test_error_message_is_generic(client):
     response = get_me(client, make_token(aal="aal1"))
     assert response.json() == {"detail": "Não autorizado"}
+
+
+def test_market_status_requires_auth(client):
+    assert client.get("/market/status").status_code == 401
+    assert client.get("/market/status", headers={"Authorization": "Bearer x"}).status_code == 401

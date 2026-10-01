@@ -1,5 +1,6 @@
-import { Database, Radar } from "lucide-react";
+import { Radar } from "lucide-react";
 
+import { MarketStatusCard } from "@/components/market-status-card";
 import { EmptyState, Metric, PageBody, PageHeader } from "@/components/page";
 
 export default function PainelPage() {
@@ -23,12 +24,7 @@ export default function PainelPage() {
           description="Aqui aparecem os sinais dos setups aprovados no laboratório, com entrada, stop, alvo e a evidência histórica de cada um."
           phase="Fase 5 · Sinais"
         />
-        <EmptyState
-          icon={Database}
-          title="Dados de mercado"
-          description="Status da coleta diária pós-fechamento e do último pregão carregado."
-          phase="Fase 2 · Dados"
-        />
+        <MarketStatusCard />
       </section>
     </PageBody>
   );
