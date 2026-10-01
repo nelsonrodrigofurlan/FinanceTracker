@@ -74,6 +74,16 @@ Build: padrão do projeto `poc-app-cursor-1` (docker build → Artifact Registry
 - **Pipeline:** Cloud Run Job sem endpoint público; disparado pelo Scheduler com service account dedicada.
 - Headers de segurança (CSP, HSTS) no Next.js; rate limit simples na API.
 
+## 4.1 Interface (design system)
+
+- shadcn/ui (preset `base-nova`, Base UI) + Tailwind v4 + ícones Lucide; tokens em `web/src/app/globals.css`.
+- Tema **escuro por padrão** (azul-noite de terminal), claro opcional (`next-themes`, com nonce).
+- Cor só com significado: `--up` / `--down` exclusivas para preço e resultado; `--primary` (azul "sinal") é a assinatura.
+- Números com `.num` (algarismos tabulares). Valor ausente aparece como "—", nunca como zero inventado.
+- Navegação: sidebar recolhível (Ctrl+B) + busca universal (Ctrl+K). Foco em desktop/notebook; app mobile nativo é decisão futura.
+- Assinatura do produto: todo sinal exibe a evidência histórica (expectativa em R e nº de trades).
+- CSP: `style-src-attr 'unsafe-inline'` liberado apenas para atributos `style=""` (usados pelo sidebar); `<style>` e scripts exigem nonce.
+
 ## 5. Dados de mercado
 
 ### 5.1 Fontes

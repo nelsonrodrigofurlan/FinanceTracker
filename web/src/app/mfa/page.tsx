@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 
+import { AuthShell } from "@/components/auth-shell";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 
 import { signOut } from "./actions";
@@ -14,14 +16,22 @@ export default async function MfaPage() {
   const verifiedTotp = factors?.totp[0];
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Verificação em duas etapas</h1>
+    <AuthShell
+      title="Verificação em duas etapas"
+      description={
+        verifiedTotp
+          ? "Digite o código de 6 dígitos do seu aplicativo autenticador."
+          : "Obrigatória para acessar. Configure uma vez e use em todo login."
+      }
+      footer={
+        <form action={signOut}>
+          <Button type="submit" variant="link" size="sm" className="text-muted-foreground">
+            Sair
+          </Button>
+        </form>
+      }
+    >
       {verifiedTotp ? <MfaChallenge factorId={verifiedTotp.id} /> : <MfaEnroll />}
-      <form action={signOut}>
-        <button type="submit" className="text-xs text-zinc-500 underline">
-          Sair
-        </button>
-      </form>
-    </main>
+    </AuthShell>
   );
 }

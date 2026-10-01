@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
+import { connection } from "next/server";
+
+import { ThemeProvider } from "@/components/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,13 +26,19 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   // CSP com nonce exige renderização dinâmica em todas as páginas (ver src/proxy.ts).
   await connection();
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <html
       lang="pt-BR"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        <ThemeProvider nonce={nonce}>
+          <TooltipProvider>{children}</TooltipProvider>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
