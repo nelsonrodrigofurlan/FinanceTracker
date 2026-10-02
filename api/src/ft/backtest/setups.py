@@ -238,6 +238,21 @@ class Setup123(_Base):
         return None
 
 
+SETUP_CLASSES = {"S1": IFR2, "S2": Setup91, "S3": Pullback, "S4": Donchian, "S5": Setup123}
+
+
+def from_params(code: str, params: dict) -> _Base:
+    """Reconstrói o setup exatamente com os parâmetros gravados no laboratório."""
+    cls = SETUP_CLASSES[code]
+    try:
+        setup = cls(**params)
+    except TypeError as exc:
+        raise ValueError(f"Parâmetros incompatíveis com o setup {code}: {exc}") from exc
+    if setup.code != code:
+        raise ValueError(f"Parâmetros de {setup.code} não correspondem ao setup {code}")
+    return setup
+
+
 def describe(setup: _Base) -> str:
     """Nome legível da variante (parâmetros que diferem do padrão)."""
     default = type(setup)()

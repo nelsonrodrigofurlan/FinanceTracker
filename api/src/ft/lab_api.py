@@ -7,16 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 
 from ft.auth import CurrentUser, require_user
-from ft.backtest.portfolio import (
-    CdiIndex,
-    PortfolioParams,
-    SimTrade,
-    benchmark,
-    cdi_series,
-    simulate,
-)
+from ft.backtest.evaluation import per_year_latest, portfolio_with_benchmarks, run_trades
+from ft.backtest.portfolio import PortfolioParams
 from ft.backtest.walkforward import WalkForwardParams, walk_forward, yearly_stability
-from ft.data import repository as repo
 from ft.db.pool import get_pool
 
 router = APIRouter(prefix="/lab", tags=["lab"])
@@ -192,31 +185,10 @@ def get_run(
 # --- Estabilidade, walk-forward e carteira ------------------------------------------------
 
 
-def _per_year_latest(conn, setup_code: str | None = None) -> dict:  # noqa: ANN001
-    rows = conn.execute(
-        """
-        with latest as (
-            select distinct on (setup_code, variant) id, setup_code, variant
-            from ft.backtest_runs order by setup_code, variant, created_at desc
-        )
-        select l.setup_code, l.variant, extract(year from t.entry_date)::int,
-               count(*), sum(t.r_multiple)
-        from latest l join ft.backtest_trades t on t.run_id = l.id
-        where %(code)s::text is null or l.setup_code = %(code)s
-        group by 1, 2, 3
-        """,
-        {"code": setup_code},
-    ).fetchall()
-    per: dict = {}
-    for code, variant, year, n, total in rows:
-        per.setdefault(code, {}).setdefault(variant, {})[year] = (int(n), float(total))
-    return per
-
-
 @router.get("/walkforward")
 def walkforward(_user: Annotated[CurrentUser, Depends(require_user)]) -> list[dict]:
     with get_pool().connection() as conn:
-        per = _per_year_latest(conn)
+        per = per_year_latest(conn)
     result = []
     for code in sorted(per):
         wf = walk_forward(per[code], WalkForwardParams())
@@ -248,32 +220,11 @@ def run_portfolio(
     max_positions: Annotated[int, Query(ge=1, le=30)] = 5,
     max_position_pct: Annotated[float, Query(gt=0, le=100)] = 20.0,
 ) -> dict:
-    with get_pool().connection() as conn:
-        rows = conn.execute(
-            """
-            select ticker, entry_date, exit_date, entry_price, initial_stop, r_multiple
-            from ft.backtest_trades where run_id = %s
-            """,
-            (run_id,),
-        ).fetchall()
-        if not rows:
-            raise HTTPException(status_code=404, detail="Execução sem trades")
-        start = min(r[1] for r in rows)
-        rates = repo.cdi_rates(conn, start)
-        bova = repo.benchmark_adj_close(conn, "BOVA11", start)
-
-    trades = [SimTrade(t, e, x, float(p), float(s), float(r)) for t, e, x, p, s, r in rows]
     params = PortfolioParams(
         risk_pct=risk_pct, max_positions=max_positions, max_position_pct=max_position_pct
     )
-    cdi = CdiIndex(rates) if rates else None
-    result = simulate(trades, params, cdi)
-    end = max(r[2] for r in rows)
-    result["cash_earns_cdi"] = cdi is not None
-    result["benchmarks"] = {
-        "cdi": benchmark(cdi_series(cdi), params.initial_capital, start, end)
-        if cdi
-        else {"available": False},
-        "bova11": benchmark(bova, params.initial_capital, start, end),
-    }
+    with get_pool().connection() as conn:
+        result = portfolio_with_benchmarks(conn, run_trades(conn, run_id), params)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Execução sem trades")
     return result

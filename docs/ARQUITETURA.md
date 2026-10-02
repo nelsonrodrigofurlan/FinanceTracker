@@ -181,6 +181,14 @@ Nº de trades · taxa de acerto · payoff médio · **expectativa em R** · prof
 - Critérios mínimos de aprovação (iniciais, ajustáveis): ≥ `{30}` trades fora da amostra, expectativa > 0 após custos, profit factor > `{1,3}`, resultado fora da amostra sem degradação grave.
 - Grade de parâmetros pequena; preferir parâmetros "em platô" a picos isolados.
 
+### 7.4 Status das estratégias (F5)
+Classificação por regra (`api/src/ft/signals/strategies.py`), sem escolha manual:
+- **Aprovado:** passa em todos os critérios formais (§7.3).
+- **Em observação:** walk-forward do setup positivo **e** carteira de referência (risco 1%, 5 posições, teto 20%, caixa no CDI) rende mais que o CDI **no período fora da amostra**. Só opera no modo simulado; operação real bloqueada no app.
+- **Reprovado:** demais casos.
+
+Resultado em 2026-10-02: **nenhuma** das 17 variantes em observação. Fora da amostra (mar/2020–set/2026) nenhuma carteira superou o CDI (~10,3% a.a.); melhor caso Donchian 20/10 com 9,6% a.a.
+
 ## 8. Modelo de dados (Postgres / Supabase)
 
 ```
