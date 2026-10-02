@@ -9,11 +9,13 @@ export function EvidenceBadge({
   expectancy,
   trades,
   approved,
+  label,
   className,
 }: {
   expectancy: number | null | undefined;
   trades: number | null | undefined;
   approved: boolean;
+  label?: string;
   className?: string;
 }) {
   return (
@@ -27,7 +29,7 @@ export function EvidenceBadge({
       )}
       title="Expectativa por trade fora da amostra, em múltiplos do risco (R)"
     >
-      {approved ? "Aprovado" : "Reprovado"}
+      {label ?? (approved ? "Aprovado" : "Reprovado")}
       <span className="opacity-60">·</span>
       {fmtR(expectancy)}
       <span className="opacity-60">em {trades ?? 0} trades</span>

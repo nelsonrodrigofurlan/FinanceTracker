@@ -9,13 +9,23 @@ const COLORS = {
   light: { text: "#5b6475", grid: "rgba(0,0,0,0.05)", in: "#9aa3b5", out: "#2f6bed", zero: "#9aa3b5" },
 } as const;
 
-/** Curva de resultado acumulado em R. Cinza = dentro da amostra; azul = fora da amostra. */
+const brl = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const FORMATTERS = {
+  r: (v: number) => `${v.toFixed(0)}R`,
+  brl: (v: number) => `R$ ${brl.format(v)}`,
+};
+
+/** Curva acumulada. Cinza = dentro da amostra; azul = fora da amostra (ou tudo, sem split). */
 export function EquityChart({
   points,
   splitDate,
+  format = "r",
+  baseline = 0,
 }: {
   points: { time: string; value: number }[];
-  splitDate: string;
+  splitDate?: string;
+  format?: keyof typeof FORMATTERS;
+  baseline?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
@@ -34,12 +44,13 @@ export function EquityChart({
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
-      localization: { locale: "pt-BR", priceFormatter: (v: number) => `${v.toFixed(0)}R` },
+      localization: { locale: "pt-BR", priceFormatter: FORMATTERS[format] },
     });
 
-    const inSample = points.filter((p) => p.time < splitDate);
+    const split = splitDate ?? "";
+    const inSample = points.filter((p) => p.time < split);
     // O trecho fora da amostra começa no último ponto de dentro, para a linha não ter buraco.
-    const outSample = points.filter((p) => p.time >= splitDate);
+    const outSample = points.filter((p) => p.time >= split);
     const bridge = inSample.length ? [inSample[inSample.length - 1]] : [];
 
     const sIn = chart.addSeries(LineSeries, { color: c.in, lineWidth: 2, priceLineVisible: false });
@@ -47,7 +58,7 @@ export function EquityChart({
     const sOut = chart.addSeries(LineSeries, { color: c.out, lineWidth: 2, priceLineVisible: false });
     sOut.setData([...bridge, ...outSample].map((p) => ({ time: p.time as Time, value: p.value })));
     sOut.createPriceLine({
-      price: 0,
+      price: baseline,
       color: c.zero,
       lineStyle: LineStyle.Dashed,
       lineWidth: 1,
@@ -55,7 +66,7 @@ export function EquityChart({
     });
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [points, splitDate, resolvedTheme]);
+  }, [points, splitDate, format, baseline, resolvedTheme]);
 
   return <div ref={ref} className="h-72 w-full" />;
 }

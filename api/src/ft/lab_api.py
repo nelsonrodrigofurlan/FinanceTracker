@@ -3,10 +3,12 @@
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 
 from ft.auth import CurrentUser, require_user
+from ft.backtest.portfolio import PortfolioParams, SimTrade, simulate
+from ft.backtest.walkforward import WalkForwardParams, walk_forward, yearly_stability
 from ft.db.pool import get_pool
 
 router = APIRouter(prefix="/lab", tags=["lab"])
@@ -177,3 +179,79 @@ def get_run(
             for r in recent
         ],
     )
+
+
+# --- Estabilidade, walk-forward e carteira ------------------------------------------------
+
+
+def _per_year_latest(conn, setup_code: str | None = None) -> dict:  # noqa: ANN001
+    rows = conn.execute(
+        """
+        with latest as (
+            select distinct on (setup_code, variant) id, setup_code, variant
+            from ft.backtest_runs order by setup_code, variant, created_at desc
+        )
+        select l.setup_code, l.variant, extract(year from t.entry_date)::int,
+               count(*), sum(t.r_multiple)
+        from latest l join ft.backtest_trades t on t.run_id = l.id
+        where %(code)s::text is null or l.setup_code = %(code)s
+        group by 1, 2, 3
+        """,
+        {"code": setup_code},
+    ).fetchall()
+    per: dict = {}
+    for code, variant, year, n, total in rows:
+        per.setdefault(code, {}).setdefault(variant, {})[year] = (int(n), float(total))
+    return per
+
+
+@router.get("/walkforward")
+def walkforward(_user: Annotated[CurrentUser, Depends(require_user)]) -> list[dict]:
+    with get_pool().connection() as conn:
+        per = _per_year_latest(conn)
+    result = []
+    for code in sorted(per):
+        wf = walk_forward(per[code], WalkForwardParams())
+        result.append({"setup_code": code, "setup_name": SETUP_NAMES.get(code, code), **wf})
+    return result
+
+
+@router.get("/runs/{run_id}/yearly")
+def run_yearly(
+    _user: Annotated[CurrentUser, Depends(require_user)],
+    run_id: Annotated[int, Path(ge=1)],
+) -> list[dict]:
+    with get_pool().connection() as conn:
+        rows = conn.execute(
+            """
+            select extract(year from entry_date)::int, count(*), sum(r_multiple)
+            from ft.backtest_trades where run_id = %s group by 1 order by 1
+            """,
+            (run_id,),
+        ).fetchall()
+    return yearly_stability({int(y): (int(n), float(s)) for y, n, s in rows})
+
+
+@router.get("/runs/{run_id}/portfolio")
+def run_portfolio(
+    _user: Annotated[CurrentUser, Depends(require_user)],
+    run_id: Annotated[int, Path(ge=1)],
+    risk_pct: Annotated[float, Query(gt=0, le=5)] = 1.0,
+    max_positions: Annotated[int, Query(ge=1, le=30)] = 5,
+    max_position_pct: Annotated[float, Query(gt=0, le=100)] = 20.0,
+) -> dict:
+    with get_pool().connection() as conn:
+        rows = conn.execute(
+            """
+            select ticker, entry_date, exit_date, entry_price, initial_stop, r_multiple
+            from ft.backtest_trades where run_id = %s
+            """,
+            (run_id,),
+        ).fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Execução sem trades")
+    trades = [SimTrade(t, e, x, float(p), float(s), float(r)) for t, e, x, p, s, r in rows]
+    params = PortfolioParams(
+        risk_pct=risk_pct, max_positions=max_positions, max_position_pct=max_position_pct
+    )
+    return simulate(trades, params)

@@ -89,3 +89,40 @@ export const EXIT_LABEL: Record<string, string> = {
   saida_minima_n: "Perdeu a mínima de N",
   fim_dos_dados: "Em aberto (fim dos dados)",
 };
+
+export type WalkForwardRow = {
+  year: number;
+  chosen_variant: string;
+  lookback_expectancy_r: number;
+  trades: number;
+  total_r: number;
+  expectancy_r: number | null;
+  would_trade: boolean;
+};
+
+export type WalkForward = {
+  setup_code: string;
+  setup_name: string;
+  params: { lookback: number; min_trades: number };
+  years: WalkForwardRow[];
+  trades: number;
+  total_r?: number;
+  expectancy_r: number | null;
+  years_traded?: number;
+  years_positive?: number;
+};
+
+export type YearlyRow = { year: number; trades: number; total_r: number; expectancy_r: number | null };
+
+export type PortfolioResult = {
+  params: { initial_capital: number; risk_pct: number; max_positions: number; max_position_pct: number };
+  trades_taken: number;
+  trades_skipped_no_slot?: number;
+  trades_skipped_size?: number;
+  final_equity?: number;
+  total_return_pct?: number;
+  cagr_pct?: number;
+  max_drawdown_pct?: number;
+  years?: number;
+  curve: { time: string; value: number }[];
+};

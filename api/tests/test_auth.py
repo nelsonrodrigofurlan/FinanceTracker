@@ -130,3 +130,15 @@ def test_candles_rejects_invalid_ticker(client):
 def test_lab_routes_require_auth(client):
     assert client.get("/lab/runs").status_code == 401
     assert client.get("/lab/runs/1").status_code == 401
+
+
+def test_lab_analysis_routes_require_auth(client):
+    assert client.get("/lab/walkforward").status_code == 401
+    assert client.get("/lab/runs/1/yearly").status_code == 401
+    assert client.get("/lab/runs/1/portfolio").status_code == 401
+
+
+def test_portfolio_params_validated(client):
+    headers = {"Authorization": f"Bearer {make_token()}"}
+    assert client.get("/lab/runs/1/portfolio?risk_pct=50", headers=headers).status_code == 422
+    assert client.get("/lab/runs/1/portfolio?max_positions=0", headers=headers).status_code == 422

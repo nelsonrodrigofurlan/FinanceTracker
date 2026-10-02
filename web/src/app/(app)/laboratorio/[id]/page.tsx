@@ -13,8 +13,10 @@ import {
   fmtNum1,
   fmtNum2,
   fmtR,
+  type PortfolioResult,
   type RunDetail,
   type SampleMetrics,
+  type YearlyRow,
 } from "@/lib/lab";
 import { fmtDate, fmtPct, fmtPrice } from "@/lib/market";
 import { cn } from "@/lib/utils";
@@ -35,17 +37,37 @@ function toneR(v: number) {
   return v > 0 ? "text-up" : v < 0 ? "text-down" : undefined;
 }
 
-export default async function RunPage({ params }: PageProps<"/laboratorio/[id]">) {
+const RISK_OPTIONS = [0.5, 1, 2];
+const POSITION_OPTIONS = [5, 10];
+
+function pick(raw: string | string[] | undefined, options: number[], fallback: number): number {
+  const value = Number(Array.isArray(raw) ? raw[0] : raw);
+  return options.includes(value) ? value : fallback;
+}
+
+export default async function RunPage({ params, searchParams }: PageProps<"/laboratorio/[id]">) {
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id < 1) notFound();
+  const query = await searchParams;
+  const risk = pick(query.risco, RISK_OPTIONS, 1);
+  const positions = pick(query.posicoes, POSITION_OPTIONS, 5);
 
   let run: RunDetail;
+  let yearly: YearlyRow[];
+  let portfolio: PortfolioResult;
   try {
-    run = await apiGet<RunDetail>(`/lab/runs/${id}`);
+    [run, yearly, portfolio] = await Promise.all([
+      apiGet<RunDetail>(`/lab/runs/${id}`),
+      apiGet<YearlyRow[]>(`/lab/runs/${id}/yearly`),
+      apiGet<PortfolioResult>(
+        `/lab/runs/${id}/portfolio?risk_pct=${risk}&max_positions=${positions}`,
+      ),
+    ]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
+  const maxAbsYear = Math.max(...yearly.map((y) => Math.abs(y.expectancy_r ?? 0)), 0.01);
 
   const best = run.by_ticker.slice(0, 5);
   const worst = run.by_ticker.slice(-5).reverse();
@@ -112,6 +134,96 @@ export default async function RunPage({ params }: PageProps<"/laboratorio/[id]">
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Simulação de carteira</CardTitle>
+          <CardDescription>
+            Como uma conta com capital limitado teria operado estes sinais: R$ 100 mil fictícios,
+            teto de 20% por posição, sinais excedentes descartados. Parâmetros de simulação, não
+            recomendação de risco.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-4 text-xs">
+            <ParamLinks
+              label="Risco por trade"
+              options={RISK_OPTIONS}
+              current={risk}
+              href={(v) => `/laboratorio/${run.id}?risco=${v}&posicoes=${positions}`}
+              suffix="%"
+            />
+            <ParamLinks
+              label="Posições simultâneas"
+              options={POSITION_OPTIONS}
+              current={positions}
+              href={(v) => `/laboratorio/${run.id}?risco=${risk}&posicoes=${v}`}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat
+              label="Retorno ao ano"
+              value={`${fmtNum1(portfolio.cagr_pct)}%`}
+              tone={portfolio.cagr_pct}
+            />
+            <Stat
+              label="Pior queda do patrimônio"
+              value={`−${fmtNum1(portfolio.max_drawdown_pct)}%`}
+              tone={-1}
+            />
+            <Stat
+              label="Retorno total"
+              value={`${fmtNum1(portfolio.total_return_pct)}%`}
+              tone={portfolio.total_return_pct}
+            />
+            <Stat
+              label="Trades feitos / sem vaga"
+              value={`${portfolio.trades_taken} / ${portfolio.trades_skipped_no_slot ?? 0}`}
+            />
+          </div>
+          <EquityChart
+            points={portfolio.curve}
+            format="brl"
+            baseline={portfolio.params.initial_capital}
+          />
+          <p className="text-muted-foreground text-xs">
+            Compare com a renda fixa: um setup que rende pouco acima do CDI com quedas grandes não
+            compensa o risco. Patrimônio realizado (posições abertas não são marcadas a mercado);
+            caixa parado não rende juros na simulação; sinais do mesmo dia entram em ordem
+            alfabética.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Estabilidade ano a ano</CardTitle>
+          <CardDescription>Expectativa por trade em cada ano (pela data de entrada).</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-1">
+          {yearly.map((y) => {
+            const e = y.expectancy_r ?? 0;
+            return (
+              <div key={y.year} className="grid grid-cols-[3rem_1fr_7rem] items-center gap-2 text-xs">
+                <span className="num text-muted-foreground">{y.year}</span>
+                <div className="relative h-3">
+                  <div className="bg-border absolute top-0 left-1/2 h-full w-px" />
+                  <div
+                    className={cn(
+                      "absolute top-0.5 h-2 rounded-sm",
+                      e >= 0 ? "bg-up left-1/2" : "bg-down right-1/2",
+                    )}
+                    style={{ width: `${(Math.abs(e) / maxAbsYear) * 50}%` }}
+                  />
+                </div>
+                <span className={cn("num text-right", toneR(e))}>
+                  {fmtR(y.expectancy_r)} <span className="text-muted-foreground">({y.trades})</span>
+                </span>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -231,5 +343,53 @@ export default async function RunPage({ params }: PageProps<"/laboratorio/[id]">
         .
       </p>
     </PageBody>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone?: number | null }) {
+  return (
+    <div className="bg-muted/40 rounded-md p-3">
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className={cn("num text-lg font-semibold", tone != null && toneR(tone))}>{value}</div>
+    </div>
+  );
+}
+
+function ParamLinks({
+  label,
+  options,
+  current,
+  href,
+  suffix = "",
+}: {
+  label: string;
+  options: number[];
+  current: number;
+  href: (value: number) => string;
+  suffix?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <div className="bg-muted flex rounded-md p-0.5">
+        {options.map((v) => (
+          <Link
+            key={v}
+            href={href(v)}
+            scroll={false}
+            aria-current={v === current ? "true" : undefined}
+            className={cn(
+              "num rounded px-2 py-0.5",
+              v === current
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {String(v).replace(".", ",")}
+            {suffix}
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -3,18 +3,18 @@ import Link from "next/link";
 
 import { EvidenceBadge } from "@/components/evidence-badge";
 import { EmptyState, PageBody, PageHeader } from "@/components/page";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { WalkForwardTable } from "@/components/walkforward-table";
 import { apiGet } from "@/lib/api";
-import { fmtNum1, fmtNum2, fmtR, type RunSummary } from "@/lib/lab";
+import { fmtNum1, fmtNum2, fmtR, type RunSummary, type WalkForward } from "@/lib/lab";
 import { fmtDate } from "@/lib/market";
 import { cn } from "@/lib/utils";
 
 export default async function LaboratorioPage() {
-  let runs: RunSummary[] | null;
-  try {
-    runs = await apiGet<RunSummary[]>("/lab/runs");
-  } catch {
-    runs = null;
-  }
+  const [runs, walkforward] = await Promise.all([
+    apiGet<RunSummary[]>("/lab/runs").catch(() => null),
+    apiGet<WalkForward[]>("/lab/walkforward").catch(() => null),
+  ]);
 
   const approved = runs?.filter((r) => r.approved).length ?? 0;
 
@@ -50,6 +50,22 @@ export default async function LaboratorioPage() {
             <span>Fora da amostra a partir de {fmtDate(runs[0].split_date)}</span>
           </div>
 
+          {walkforward && walkforward.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Validação walk-forward</CardTitle>
+                <CardDescription>
+                  A cada ano, escolhe a melhor variante dos 5 anos anteriores e mede o resultado no
+                  ano seguinte — como seria operar de verdade, sem conhecer o futuro.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <WalkForwardTable data={walkforward} />
+              </CardContent>
+            </Card>
+          )}
+
+          <h2 className="text-sm font-medium">Todas as variantes (divisão 70/30)</h2>
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
               <thead className="text-muted-foreground bg-muted/40 border-b text-xs">
