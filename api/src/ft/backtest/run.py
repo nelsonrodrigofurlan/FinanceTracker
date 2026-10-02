@@ -96,7 +96,7 @@ def save_run(
     return run_id
 
 
-def run(setup_filter: str | None, use_cache: bool) -> int:
+def run(setup_filter: str | None, use_cache: bool, regime: bool | None = None) -> int:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(message)s")
     costs, criteria = Costs(), ApprovalCriteria()
@@ -108,7 +108,7 @@ def run(setup_filter: str | None, use_cache: bool) -> int:
         end = date.fromisoformat(universe["last_date"])
         split = split_date(PERIOD_START, end)
 
-        for setup in variants():
+        for setup in variants(regime):
             if setup_filter and setup.code != setup_filter:
                 continue
             t0 = time.perf_counter()
@@ -152,8 +152,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Laboratório de backtest")
     parser.add_argument("--setup", choices=["S1", "S2", "S3", "S4", "S5"])
     parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument(
+        "--regime",
+        choices=["todas", "com", "sem"],
+        default="todas",
+        help="variantes com filtro de regime do Ibovespa, sem, ou todas",
+    )
     args = parser.parse_args()
-    sys.exit(run(args.setup, use_cache=not args.no_cache))
+    regime = {"todas": None, "com": True, "sem": False}[args.regime]
+    sys.exit(run(args.setup, use_cache=not args.no_cache, regime=regime))
 
 
 if __name__ == "__main__":

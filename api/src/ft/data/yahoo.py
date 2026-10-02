@@ -30,8 +30,13 @@ COLUMNS = {
 }
 
 
+# Índices não seguem o padrão TICKER.SA.
+INDEX_SYMBOLS = {"IBOV": "^BVSP"}
+
+
 def to_yahoo_symbol(ticker: str) -> str:
-    return f"{ticker.upper()}.SA"
+    ticker = ticker.upper()
+    return INDEX_SYMBOLS.get(ticker, f"{ticker}.SA")
 
 
 @dataclass

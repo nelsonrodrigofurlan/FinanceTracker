@@ -20,6 +20,9 @@ from ft.backtest.engine import Bars
 logger = logging.getLogger("ft.backtest.data")
 
 MAX_GAP_DAYS = 30
+CACHE_VERSION = "v2"  # v2: inclui regime do Ibovespa
+REGIME_INDEX = "IBOV"
+REGIME_SMA = 200
 CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "cache"
 
 
@@ -57,7 +60,7 @@ def load_universe(
 ) -> tuple[dict[str, Bars], dict]:
     """Ações ativas do universo (sem ETFs de referência). Retorna (bars, informações)."""
     last = conn.execute("select max(date) from ft.candles_daily").fetchone()[0]
-    cache_file = CACHE_DIR / f"universe_{start.isoformat()}_{last.isoformat()}.pkl"
+    cache_file = CACHE_DIR / f"universe_{CACHE_VERSION}_{start.isoformat()}_{last.isoformat()}.pkl"
     if use_cache and cache_file.exists():
         logger.info("usando cache %s", cache_file.name)
         with cache_file.open("rb") as fh:
@@ -79,6 +82,7 @@ def load_universe(
     for col in ("open", "high", "low", "close", "adj_close", "volume"):
         frame[col] = frame[col].astype("float64")
 
+    regime = load_regime(conn, start)
     bars: dict[str, Bars] = {}
     cut: dict[str, str] = {}
     for ticker, group in frame.groupby("ticker", sort=True):
@@ -86,12 +90,16 @@ def load_universe(
         trimmed = cut_at_last_break(group)
         if len(trimmed) < len(group):
             cut[ticker] = str(trimmed["date"].iloc[0])
-        bars[ticker] = to_bars(str(ticker), adjust(trimmed))
+        b = to_bars(str(ticker), adjust(trimmed))
+        # Dia sem informação de regime conta como "mercado em baixa" (conservador).
+        b.regime = np.array([regime.get(d, False) for d in b.dates], dtype=bool)
+        bars[ticker] = b
 
     info = {
         "tickers": sorted(bars),
         "series_cut_at": cut,
         "last_date": last.isoformat(),
+        "regime": f"{REGIME_INDEX} acima da MMA{REGIME_SMA} ({len(regime)} pregões com regime)",
         "note": (
             "Universo = ações líquidas de HOJE aplicadas ao passado: há viés de sobrevivência "
             "(empresas que saíram da bolsa não estão no teste). Resultados tendem a ser otimistas."
@@ -102,3 +110,29 @@ def load_universe(
         with cache_file.open("wb") as fh:
             pickle.dump((bars, info), fh)
     return bars, info
+
+
+def regime_from_closes(closes: pd.Series, n: int = REGIME_SMA) -> dict:
+    """{data: True se o fechamento estiver acima da MMA n}. Sem MMA calculável → ausente."""
+    sma = closes.rolling(n, min_periods=n).mean()
+    valid = sma.notna()
+    return {
+        d: bool(c > s)
+        for d, c, s in zip(closes.index[valid], closes[valid], sma[valid], strict=True)
+    }
+
+
+def load_regime(conn: psycopg.Connection, start: date) -> dict:
+    """Regime diário do Ibovespa, com ~1,5 ano extra antes de `start` para aquecer a MMA."""
+    rows = conn.execute(
+        """
+        select c.date, c.close from ft.candles_daily c
+        join ft.assets a on a.id = c.asset_id
+        where a.ticker = %s and c.date >= %s::date - 550 order by c.date
+        """,
+        (REGIME_INDEX, start),
+    ).fetchall()
+    if not rows:
+        raise RuntimeError(f"Sem candles de {REGIME_INDEX}: rode o pipeline antes do laboratório")
+    closes = pd.Series([float(c) for _, c in rows], index=[d for d, _ in rows], dtype="float64")
+    return regime_from_closes(closes)

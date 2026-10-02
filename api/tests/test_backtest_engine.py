@@ -190,3 +190,26 @@ def _trade(bars, r, day):
 
     d = date(2020, 1, 1) + timedelta(days=day)
     return Trade("TEST3", d, 10.0, d, 10.0 + r, 9.0, None, r, r * 10, 1, "x")
+
+
+def test_regime_filter_blocks_only_new_entries():
+    bars = make_bars([(10, 10.5, 9.5, 10), (10, 10.6, 9.8, 10.4), (10.4, 11, 10.2, 11)])
+
+    class WithRegime(Scripted):
+        regime_filter = True
+
+    setup = WithRegime({0: Order(kind="close", stop=9.0), 1: Order(kind="close", stop=9.0)})
+    bars.regime = np.array([False, True, True])
+    [trade] = run_asset(setup, bars, NO_COSTS)
+    assert trade.entry_date == bars.dates[1]  # sinal do dia 0 bloqueado (mercado em baixa)
+
+    bars.regime = None  # sem informação de regime → não entra (conservador)
+    assert run_asset(WithRegime({0: Order(kind="close", stop=9.0)}), bars, NO_COSTS) == []
+
+
+def test_regime_from_closes():
+    from ft.backtest.data import regime_from_closes
+
+    closes = pd.Series([10.0, 10.0, 13.0, 8.0], index=[1, 2, 3, 4])
+    regime = regime_from_closes(closes, n=2)
+    assert regime == {2: False, 3: True, 4: False}  # MMA2: 10, 11.5, 10.5

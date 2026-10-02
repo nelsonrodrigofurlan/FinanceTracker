@@ -4,9 +4,12 @@ Verificado em 2026-10-02:
 - URL: https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=dd/mm/aaaa&dataFinal=dd/mm/aaaa
 - Valor em % ao dia útil (ex.: "0.064893" em 03/01/2005).
 - Séries diárias aceitam janela de no máximo 10 anos por consulta (HTTP 406 acima disso).
+- Intervalo sem dado publicado (ex.: CDI de ontem antes da divulgação) responde HTTP 404 com
+  "Value(s) not found" — tratado como "nada novo", não como erro.
 """
 
 import json
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
 
@@ -44,6 +47,12 @@ def fetch_cdi(start: date, end: date, timeout: float = 30) -> dict[date, float]:
     for a, b in chunks(start, end):
         url = URL.format(start=a.strftime("%d/%m/%Y"), end=b.strftime("%d/%m/%Y"))
         request = urllib.request.Request(url, headers={"User-Agent": "FinanceTracker/0.1"})  # noqa: S310
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-            result.update(parse(json.load(response)))
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+                result.update(parse(json.load(response)))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")
+            if exc.code == 404 and "not found" in body.lower():
+                continue  # sem dado publicado no intervalo
+            raise
     return result

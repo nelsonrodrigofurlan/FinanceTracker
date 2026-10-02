@@ -4,7 +4,7 @@ Parâmetros são hipóteses a testar, não valores definitivos. Cada setup expõ
 que o resultado salvo seja reproduzível.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -54,6 +54,7 @@ class IFR2(_Base):
     time_stop: int = 7
     stop_atr: float | None = None  # None = sem stop de preço (original de Connors)
     risk_atr: float = 2.0  # unidade R quando não há stop de preço
+    regime_filter: bool = False  # só entra com Ibovespa acima da MMA200
     code: str = "S1"
 
     def prepare(self, bars: Bars) -> dict:
@@ -91,6 +92,7 @@ class IFR2(_Base):
 @dataclass
 class Setup91(_Base):
     ema_n: int = 9
+    regime_filter: bool = False  # só entra com Ibovespa acima da MMA200
     code: str = "S2"
 
     def prepare(self, bars: Bars) -> dict:
@@ -129,6 +131,7 @@ class Pullback(_Base):
     exit: str = "target"  # "target" (alvo em R) | "trail3" (mínima dos 3 últimos)
     target_r: float = 2.0
     validity: int = 1
+    regime_filter: bool = False  # só entra com Ibovespa acima da MMA200
     code: str = "S3"
 
     def prepare(self, bars: Bars) -> dict:
@@ -169,6 +172,7 @@ class Donchian(_Base):
     exit_n: int = 10
     volume_mult: float = 1.5
     stop_atr: float = 2.0
+    regime_filter: bool = False  # só entra com Ibovespa acima da MMA200
     code: str = "S4"
 
     def prepare(self, bars: Bars) -> dict:
@@ -203,6 +207,7 @@ class Setup123(_Base):
     exit: str = "target"  # "target" | "trail3"
     target_r: float = 2.0
     validity: int = 1
+    regime_filter: bool = False  # só entra com Ibovespa acima da MMA200
     code: str = "S5"
 
     def prepare(self, bars: Bars) -> dict:
@@ -262,8 +267,11 @@ def describe(setup: _Base) -> str:
     return "padrão" if not diffs else ", ".join(diffs)
 
 
-def variants() -> list[_Base]:
-    """Grade pequena de variações (evita sobre-otimização: poucos parâmetros, valores clássicos)."""
+def variants(regime: bool | None = None) -> list[_Base]:
+    """Grade pequena de variações (evita sobre-otimização: poucos parâmetros, valores clássicos).
+
+    regime=None → todas; True → só com filtro de regime; False → só sem filtro.
+    """
     out: list[_Base] = []
     for rsi_max in (5.0, 10.0):
         for exit_ in ("max2", "sma5"):
@@ -277,7 +285,10 @@ def variants() -> list[_Base]:
     for trend in (200, None):
         for exit_ in ("target", "trail3"):
             out.append(Setup123(trend_sma=trend, exit=exit_))
-    return out
+    with_regime = [replace(v, regime_filter=True) for v in out]
+    if regime is None:
+        return out + with_regime
+    return with_regime if regime else out
 
 
 __all__ = [

@@ -12,6 +12,7 @@ from ft.data.yahoo import SOURCE, DailyHistory, to_yahoo_symbol
 BENCHMARKS = {
     "BOVA11": ("etf", "ISHARES IBOVESPA"),
     "SMAL11": ("etf", "ISHARES SMALL CAP"),
+    "IBOV": ("index", "ÍNDICE IBOVESPA"),
 }
 
 

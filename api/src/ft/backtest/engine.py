@@ -10,6 +10,8 @@ Regras de execução (docs/ARQUITETURA.md §7.1):
 - Stop e alvo no mesmo candle → assume o stop (conservador).
 - No candle de entrada só o stop é verificado (não se credita alvo atingido no mesmo candle).
 - Custos: slippage piora entrada e saída; taxas incidem sobre o valor de compra e de venda.
+- Filtro de regime (opcional por setup): só gera sinais novos quando o Ibovespa fecha acima
+  da própria MMA200 no dia do sinal. Não força saída de posições abertas.
 """
 
 from dataclasses import dataclass, field
@@ -19,7 +21,7 @@ from typing import Literal, Protocol
 import numpy as np
 
 TICK = 0.01
-ENGINE_VERSION = "1.0.0"
+ENGINE_VERSION = "1.1.0"
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,8 @@ class Bars:
     low: np.ndarray
     close: np.ndarray
     volume: np.ndarray
+    # True = mercado em alta (Ibovespa acima da MMA200) no dia; None = sem informação de regime.
+    regime: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.dates)
@@ -216,6 +220,10 @@ def run_asset(setup: Setup, bars: Bars, costs: Costs, start_idx: int = 0) -> lis
             continue
 
         if pending is None:
+            if getattr(setup, "regime_filter", False) and (
+                bars.regime is None or not bars.regime[t]
+            ):
+                continue  # filtro de regime: sem entradas novas com o mercado em baixa
             order = setup.signal(t, bars, ind)
             if order is None:
                 continue
