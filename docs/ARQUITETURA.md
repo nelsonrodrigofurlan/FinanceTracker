@@ -208,6 +208,16 @@ Resultados (fora da amostra mar/2020–set/2026; CDI ≈ 10,3% a.a.):
 Conclusão: nenhuma das 34 variantes de setups de candle nem das 8 de momentum supera o CDI
 quando o universo é ponto a ponto. O ganho aparente vinha do viés de sobrevivência.
 
+### 7.6 Alternância Ibovespa ↔ CDI (2026-10-02)
+4 regras clássicas (MMA200 e MMA100 diárias, média de 10 meses, retorno 12m vs CDI), 1995–2026,
+execução no fechamento seguinte ao sinal, custos de troca e taxa de 0,10% a.a. do BOVA11.
+Fora da amostra (mar/2017+): CDI 9,1% a.a.; comprar-e-segurar 11,9% (queda 47%); regras entre
+3,3% e 8,6% a.a. Walk-forward 2000–2026: 7,2% a.a. vs CDI 11,9%. IR não modelado (pioraria).
+No período inteiro (1995–2026) o CDI (14,8% a.a.) superou o próprio Ibovespa (12,7%, queda 65%).
+
+**Contador de estratégias testadas até aqui: 46** (34 setups de candle, 8 momentum, 4 timing).
+Nenhuma aprovada.
+
 ## 8. Modelo de dados (Postgres / Supabase)
 
 ```
