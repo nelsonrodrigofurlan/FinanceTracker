@@ -15,6 +15,7 @@ import psycopg
 from ft import __version__
 from ft.config import get_settings
 from ft.data import repository as repo
+from ft.data.bcb import fetch_cdi
 from ft.data.market_time import now_b3
 from ft.data.quality import clean_candles
 from ft.data.yahoo import DailyHistory, fetch_daily
@@ -106,6 +107,26 @@ def refresh_universe(
     }
 
 
+CDI_START = date(2005, 1, 1)
+
+
+def update_cdi(conn: psycopg.Connection) -> dict:
+    """CDI (BCB). Falha aqui não derruba a coleta de preços: só fica registrada."""
+    try:
+        last = repo.last_cdi_date(conn)
+        start = last + timedelta(days=1) if last else CDI_START
+        today = now_b3().date()
+        if start > today:
+            return {"rows": 0}
+        rows = repo.upsert_cdi(conn, fetch_cdi(start, today))
+        conn.commit()
+        return {"rows": rows}
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        logger.warning("CDI não atualizado: %s", exc)
+        return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+
+
 def run(fetch: Fetcher = fetch_daily, force_universe: bool = False) -> int:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(message)s")
@@ -118,6 +139,8 @@ def run(fetch: Fetcher = fetch_daily, force_universe: bool = False) -> int:
             for ticker, (asset_type, name) in repo.BENCHMARKS.items():
                 repo.ensure_asset(conn, ticker, asset_type, is_benchmark=True, name=name)
             conn.commit()
+
+            stats["cdi"] = update_cdi(conn)
 
             stats["universe"] = refresh_universe(
                 conn, now_b3().date(), LiquidityCriteria(), fetch, force=force_universe

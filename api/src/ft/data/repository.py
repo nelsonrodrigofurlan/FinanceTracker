@@ -213,3 +213,39 @@ def missing_sessions(
     for ticker, day in rows:
         result.setdefault(ticker, []).append(day.isoformat())
     return result
+
+
+def last_cdi_date(conn: psycopg.Connection) -> date | None:
+    return conn.execute("select max(date) from ft.cdi_daily").fetchone()[0]
+
+
+def upsert_cdi(conn: psycopg.Connection, rates: dict[date, float]) -> int:
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            insert into ft.cdi_daily (date, rate_pct_day) values (%s, %s)
+            on conflict (date) do update set rate_pct_day = excluded.rate_pct_day,
+                updated_at = now()
+            """,
+            [(d, _dec(r, 8)) for d, r in sorted(rates.items())],
+        )
+    return len(rates)
+
+
+def cdi_rates(conn: psycopg.Connection, start: date) -> dict[date, float]:
+    rows = conn.execute(
+        "select date, rate_pct_day from ft.cdi_daily where date >= %s order by date", (start,)
+    ).fetchall()
+    return {d: float(r) for d, r in rows}
+
+
+def benchmark_adj_close(conn: psycopg.Connection, ticker: str, start: date) -> dict[date, float]:
+    rows = conn.execute(
+        """
+        select c.date, c.adj_close from ft.candles_daily c
+        join ft.assets a on a.id = c.asset_id
+        where a.ticker = %s and c.date >= %s order by c.date
+        """,
+        (ticker, start),
+    ).fetchall()
+    return {d: float(v) for d, v in rows}

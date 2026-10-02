@@ -77,3 +77,29 @@ def test_drawdown_measured_on_realized_equity():
     ]
     out = simulate(trades, p)
     assert out["max_drawdown_pct"] == pytest.approx(1.0, abs=0.01)
+
+
+# --- CDI e comparações ------------------------------------------------------------------
+
+
+def test_idle_cash_earns_cdi():
+    from ft.backtest.portfolio import CdiIndex
+
+    # 1% ao dia em 3 dias úteis (valor exagerado para facilitar a conta)
+    cdi = CdiIndex({date(2020, 1, 2): 1.0, date(2020, 1, 3): 1.0, date(2020, 1, 6): 1.0})
+    p = PortfolioParams(initial_capital=10_000, risk_pct=1, max_positions=5, max_position_pct=100)
+    # Trade com resultado zero: só os juros mudam o patrimônio.
+    trades = [trade("A", date(2020, 1, 1), date(2020, 1, 6), r=0.0)]
+    out = simulate(trades, p, cdi)
+    # Posição de 100 ações × R$10 = R$1.000 imobilizados; R$9.000 rendem 3 dias a 1%.
+    assert out["cash_interest"] == pytest.approx(9_000 * (1.01**3 - 1), abs=0.01)  # centavos
+
+
+def test_benchmark_cagr_and_drawdown():
+    from ft.backtest.portfolio import benchmark
+
+    series = {date(2020, 1, 1): 100.0, date(2020, 7, 1): 80.0, date(2021, 1, 1): 121.0}
+    out = benchmark(series, 1_000, date(2020, 1, 1), date(2021, 1, 1))
+    assert out["total_return_pct"] == pytest.approx(21.0)
+    assert out["max_drawdown_pct"] == pytest.approx(20.0)
+    assert out["cagr_pct"] == pytest.approx(21.0, abs=0.1)  # ~1 ano

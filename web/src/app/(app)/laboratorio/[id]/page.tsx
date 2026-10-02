@@ -2,6 +2,7 @@ import { ArrowLeft, Check, X } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ComparisonChart } from "@/components/comparison-chart";
 import { EquityChart } from "@/components/equity-chart";
 import { EvidenceBadge } from "@/components/evidence-badge";
 import { PageBody } from "@/components/page";
@@ -160,37 +161,26 @@ export default async function RunPage({ params, searchParams }: PageProps<"/labo
               href={(v) => `/laboratorio/${run.id}?risco=${risk}&posicoes=${v}`}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat
-              label="Retorno ao ano"
-              value={`${fmtNum1(portfolio.cagr_pct)}%`}
-              tone={portfolio.cagr_pct}
-            />
-            <Stat
-              label="Pior queda do patrimônio"
-              value={`−${fmtNum1(portfolio.max_drawdown_pct)}%`}
-              tone={-1}
-            />
-            <Stat
-              label="Retorno total"
-              value={`${fmtNum1(portfolio.total_return_pct)}%`}
-              tone={portfolio.total_return_pct}
-            />
-            <Stat
-              label="Trades feitos / sem vaga"
-              value={`${portfolio.trades_taken} / ${portfolio.trades_skipped_no_slot ?? 0}`}
-            />
-          </div>
-          <EquityChart
-            points={portfolio.curve}
-            format="brl"
+          <ComparisonTable portfolio={portfolio} />
+          <ComparisonChart
             baseline={portfolio.params.initial_capital}
+            series={[
+              { key: "setup", label: run.setup_code, points: portfolio.curve },
+              ...(portfolio.benchmarks?.cdi.available
+                ? [{ key: "cdi", label: "CDI", points: portfolio.benchmarks.cdi.curve ?? [] }]
+                : []),
+              ...(portfolio.benchmarks?.bova11.available
+                ? [{ key: "bova", label: "BOVA11", points: portfolio.benchmarks.bova11.curve ?? [] }]
+                : []),
+            ]}
           />
           <p className="text-muted-foreground text-xs">
-            Compare com a renda fixa: um setup que rende pouco acima do CDI com quedas grandes não
-            compensa o risco. Patrimônio realizado (posições abertas não são marcadas a mercado);
-            caixa parado não rende juros na simulação; sinais do mesmo dia entram em ordem
-            alfabética.
+            {portfolio.cash_earns_cdi
+              ? "Caixa parado rende CDI (fonte: Banco Central, SGS série 12). "
+              : "Sem dados de CDI: caixa parado não rende juros. "}
+            Patrimônio realizado (posições abertas não são marcadas a mercado); sinais do mesmo dia
+            entram em ordem alfabética. BOVA11 existe desde 2008: a comparação com ele começa na
+            data indicada.
           </p>
         </CardContent>
       </Card>
@@ -346,15 +336,6 @@ export default async function RunPage({ params, searchParams }: PageProps<"/labo
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: number | null }) {
-  return (
-    <div className="bg-muted/40 rounded-md p-3">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className={cn("num text-lg font-semibold", tone != null && toneR(tone))}>{value}</div>
-    </div>
-  );
-}
-
 function ParamLinks({
   label,
   options,
@@ -390,6 +371,83 @@ function ParamLinks({
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ComparisonTable({ portfolio }: { portfolio: PortfolioResult }) {
+  const rows = [
+    {
+      label: "Setup (caixa rendendo CDI)",
+      cagr: portfolio.cagr_pct,
+      dd: portfolio.max_drawdown_pct,
+      total: portfolio.total_return_pct,
+      since: null as string | null,
+      highlight: true,
+    },
+    ...(["cdi", "bova11"] as const)
+      .filter((k) => portfolio.benchmarks?.[k].available)
+      .map((k) => {
+        const b = portfolio.benchmarks![k];
+        return {
+          label: k === "cdi" ? "Só CDI (renda fixa)" : "Comprar e segurar BOVA11",
+          cagr: b.cagr_pct,
+          dd: b.max_drawdown_pct,
+          total: b.total_return_pct,
+          since: b.start ?? null,
+          highlight: false,
+        };
+      }),
+  ];
+  const cdi = portfolio.benchmarks?.cdi;
+  const beatsCdi = cdi?.available && (portfolio.cagr_pct ?? -Infinity) > (cdi.cagr_pct ?? Infinity);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="text-muted-foreground bg-muted/40 border-b text-xs">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Estratégia</th>
+              <th className="px-3 py-2 text-right font-medium">Retorno ao ano</th>
+              <th className="px-3 py-2 text-right font-medium">Pior queda</th>
+              <th className="px-3 py-2 text-right font-medium">Retorno total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map((r) => (
+              <tr key={r.label} className={cn(r.highlight && "font-medium")}>
+                <td className="px-3 py-2">
+                  {r.label}
+                  {r.since && (
+                    <span className="text-muted-foreground ml-1 text-xs font-normal">
+                      desde {fmtDate(r.since)}
+                    </span>
+                  )}
+                </td>
+                <td className={cn("num px-3 py-2 text-right", r.cagr != null && toneR(r.cagr))}>
+                  {fmtNum1(r.cagr)}%
+                </td>
+                <td className="num text-down px-3 py-2 text-right">
+                  {r.dd ? `−${fmtNum1(r.dd)}%` : "0%"}
+                </td>
+                <td className="num px-3 py-2 text-right">{fmtNum1(r.total)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        {portfolio.trades_taken} trades feitos · {portfolio.trades_skipped_no_slot ?? 0} sinais
+        descartados por falta de vaga.{" "}
+        {cdi?.available && (
+          <span className={cn("font-medium", beatsCdi ? "text-up" : "text-down")}>
+            {beatsCdi
+              ? "Rendeu mais que o CDI — avalie se a diferença compensa a pior queda."
+              : "Rendeu menos que o CDI: não compensa o risco."}
+          </span>
+        )}
+      </p>
     </div>
   );
 }

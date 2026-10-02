@@ -7,8 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 
 from ft.auth import CurrentUser, require_user
-from ft.backtest.portfolio import PortfolioParams, SimTrade, simulate
+from ft.backtest.portfolio import (
+    CdiIndex,
+    PortfolioParams,
+    SimTrade,
+    benchmark,
+    cdi_series,
+    simulate,
+)
 from ft.backtest.walkforward import WalkForwardParams, walk_forward, yearly_stability
+from ft.data import repository as repo
 from ft.db.pool import get_pool
 
 router = APIRouter(prefix="/lab", tags=["lab"])
@@ -248,10 +256,24 @@ def run_portfolio(
             """,
             (run_id,),
         ).fetchall()
-    if not rows:
-        raise HTTPException(status_code=404, detail="Execução sem trades")
+        if not rows:
+            raise HTTPException(status_code=404, detail="Execução sem trades")
+        start = min(r[1] for r in rows)
+        rates = repo.cdi_rates(conn, start)
+        bova = repo.benchmark_adj_close(conn, "BOVA11", start)
+
     trades = [SimTrade(t, e, x, float(p), float(s), float(r)) for t, e, x, p, s, r in rows]
     params = PortfolioParams(
         risk_pct=risk_pct, max_positions=max_positions, max_position_pct=max_position_pct
     )
-    return simulate(trades, params)
+    cdi = CdiIndex(rates) if rates else None
+    result = simulate(trades, params, cdi)
+    end = max(r[2] for r in rows)
+    result["cash_earns_cdi"] = cdi is not None
+    result["benchmarks"] = {
+        "cdi": benchmark(cdi_series(cdi), params.initial_capital, start, end)
+        if cdi
+        else {"available": False},
+        "bova11": benchmark(bova, params.initial_capital, start, end),
+    }
+    return result

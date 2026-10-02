@@ -124,5 +124,17 @@ export type PortfolioResult = {
   cagr_pct?: number;
   max_drawdown_pct?: number;
   years?: number;
+  cash_interest?: number;
+  cash_earns_cdi?: boolean;
   curve: { time: string; value: number }[];
+  benchmarks?: Record<"cdi" | "bova11", Benchmark>;
+};
+
+export type Benchmark = {
+  available: boolean;
+  start?: string;
+  cagr_pct?: number;
+  total_return_pct?: number;
+  max_drawdown_pct?: number;
+  curve?: { time: string; value: number }[];
 };

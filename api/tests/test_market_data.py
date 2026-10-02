@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -197,3 +197,25 @@ def test_db_guard_rejects_other_project():
 def test_db_guard_rejects_missing_url():
     with pytest.raises(DatabaseConfigError):
         assert_db_matches_project(settings(supabase_project_ref="abc"))
+
+
+# --- CDI (BCB) ---------------------------------------------------------------------------
+
+
+def test_bcb_parse_and_validation():
+    from ft.data.bcb import parse
+
+    rates = parse([{"data": "03/01/2005", "valor": "0.064893"}])
+    assert rates == {date(2005, 1, 3): pytest.approx(0.064893)}
+    with pytest.raises(ValueError, match="fora da faixa"):
+        parse([{"data": "03/01/2005", "valor": "6.4893"}])
+
+
+def test_bcb_chunks_respect_10_year_limit():
+    from ft.data.bcb import chunks
+
+    blocks = chunks(date(2005, 1, 1), date(2026, 10, 2))
+    assert blocks[0] == (date(2005, 1, 1), date(2009, 12, 31))
+    assert blocks[-1][1] == date(2026, 10, 2)
+    assert all((b - a).days < 10 * 365 for a, b in blocks)
+    assert all(blocks[i][1] + timedelta(days=1) == blocks[i + 1][0] for i in range(len(blocks) - 1))
