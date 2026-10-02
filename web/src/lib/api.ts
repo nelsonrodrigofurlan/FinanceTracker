@@ -30,3 +30,19 @@ export async function apiGet<T>(path: string): Promise<T> {
   if (!response.ok) throw new ApiError(response.status, path);
   return (await response.json()) as T;
 }
+
+export async function apiSend<T>(path: string, method: "PUT" | "POST", body: unknown): Promise<T> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new ApiError(401, path);
+
+  const response = await fetch(`${serverEnv.apiUrl()}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new ApiError(response.status, path);
+  return (await response.json()) as T;
+}

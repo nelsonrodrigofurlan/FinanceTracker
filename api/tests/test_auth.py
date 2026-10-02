@@ -142,3 +142,16 @@ def test_portfolio_params_validated(client):
     headers = {"Authorization": f"Bearer {make_token()}"}
     assert client.get("/lab/runs/1/portfolio?risk_pct=50", headers=headers).status_code == 422
     assert client.get("/lab/runs/1/portfolio?max_positions=0", headers=headers).status_code == 422
+
+
+def test_settings_require_auth_and_validate(client):
+    assert client.get("/settings").status_code == 401
+    assert client.put("/settings", json={}).status_code == 401
+    headers = {"Authorization": f"Bearer {make_token()}"}
+    assert client.put("/settings", json={"risk_pct": 10}, headers=headers).status_code == 422
+    assert client.put("/settings", json={"max_positions": 0}, headers=headers).status_code == 422
+
+
+def test_signal_routes_require_auth(client):
+    for path in ("/strategies", "/signals/latest", "/sim/book"):
+        assert client.get(path).status_code == 401

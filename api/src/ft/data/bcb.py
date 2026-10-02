@@ -9,6 +9,7 @@ Verificado em 2026-10-02:
 """
 
 import json
+import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -42,17 +43,24 @@ def chunks(start: date, end: date, years: int = CHUNK_YEARS) -> list[tuple[date,
     return out
 
 
-def fetch_cdi(start: date, end: date, timeout: float = 30) -> dict[date, float]:
+def fetch_cdi(
+    start: date, end: date, timeout: float = 30, retries: int = 3, pause_seconds: float = 5.0
+) -> dict[date, float]:
     result: dict[date, float] = {}
     for a, b in chunks(start, end):
         url = URL.format(start=a.strftime("%d/%m/%Y"), end=b.strftime("%d/%m/%Y"))
         request = urllib.request.Request(url, headers={"User-Agent": "FinanceTracker/0.1"})  # noqa: S310
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-                result.update(parse(json.load(response)))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", "replace")
-            if exc.code == 404 and "not found" in body.lower():
-                continue  # sem dado publicado no intervalo
-            raise
+        for attempt in range(1, retries + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+                    result.update(parse(json.load(response)))
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")
+                if exc.code == 404 and "not found" in body.lower():
+                    break  # sem dado publicado no intervalo
+                if exc.code >= 500 and attempt < retries:
+                    time.sleep(pause_seconds * attempt)  # instabilidade do servidor do BCB
+                    continue
+                raise
     return result

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     supabase_jwks_url: str = ""
     supabase_project_ref: str = ""
     supabase_db_url: str = ""
+    telegram_bot_token: SecretStr = SecretStr("")
+    telegram_chat_id: str = ""
     # IDs (UUID) de usuários autorizados, separados por vírgula. Vazio = ninguém (fail-closed).
     allowed_user_ids: Annotated[frozenset[str], NoDecode] = frozenset()
 

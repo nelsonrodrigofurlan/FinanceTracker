@@ -11,6 +11,8 @@ from ft.config import get_settings
 from ft.db.pool import close_pool
 from ft.lab_api import router as lab_router
 from ft.market_api import router as market_router
+from ft.settings_api import router as settings_router
+from ft.signals_api import router as signals_router
 
 
 @asynccontextmanager
@@ -42,6 +44,8 @@ def create_app() -> FastAPI:
 
     app.include_router(market_router)
     app.include_router(lab_router)
+    app.include_router(settings_router)
+    app.include_router(signals_router)
 
     return app
 

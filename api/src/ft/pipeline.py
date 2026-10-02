@@ -13,6 +13,7 @@ from datetime import date, timedelta
 import psycopg
 
 from ft import __version__
+from ft.alerts import telegram
 from ft.config import get_settings
 from ft.data import repository as repo
 from ft.data.bcb import fetch_cdi
@@ -127,7 +128,7 @@ def update_cdi(conn: psycopg.Connection) -> dict:
         return {"error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
-def run(fetch: Fetcher = fetch_daily, force_universe: bool = False) -> int:
+def run(fetch: Fetcher = fetch_daily, force_universe: bool = False, notify: bool = True) -> int:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(message)s")
     logger.info("pipeline start version=%s env=%s", __version__, settings.app_env)
@@ -161,16 +162,27 @@ def run(fetch: Fetcher = fetch_daily, force_universe: bool = False) -> int:
                 "errors": errors,
             }
             stats["quality"] = {"missing_sessions": repo.missing_sessions(conn)}
+            from ft.signals.live import run_daily  # import tardio: evita ciclo com o laboratório
+
+            live = run_daily(conn)
+            stats["signals"] = {k: v for k, v in live.items() if k != "new"}
             if stats["quality"]["missing_sessions"]:
                 logger.warning("pregões faltando: %s", stats["quality"]["missing_sessions"])
             repo.finish_run(conn, run_id, "success", stats)
+            if notify:
+                telegram.send(
+                    settings, telegram.daily_summary(stats, live["new"], settings.app_env)
+                )
             logger.info(
                 "pipeline ok: %s", {k: v for k, v in stats["update"].items() if k != "errors"}
             )
             return 0
         except Exception as exc:
             conn.rollback()
-            repo.finish_run(conn, run_id, "failed", stats, f"{type(exc).__name__}: {exc}"[:1000])
+            message = f"{type(exc).__name__}: {exc}"[:1000]
+            repo.finish_run(conn, run_id, "failed", stats, message)
+            if notify:
+                telegram.send(settings, telegram.failure_message(settings.app_env, message))
             logger.exception("pipeline falhou")
             return 1
 
@@ -180,4 +192,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force-universe", action="store_true", help="recalcula o universo mesmo já feito no mês"
     )
-    sys.exit(run(force_universe=parser.parse_args().force_universe))
+    parser.add_argument("--sem-alerta", action="store_true", help="não envia Telegram")
+    args = parser.parse_args()
+    sys.exit(run(force_universe=args.force_universe, notify=not args.sem_alerta))
