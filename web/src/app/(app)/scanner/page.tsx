@@ -9,6 +9,8 @@ import { fmtR } from "@/lib/lab";
 import { fmtDate, fmtPrice } from "@/lib/market";
 import { ORDER_LABEL, type Signal, type Strategy } from "@/lib/signals";
 
+import { ExplainSignal } from "./explain";
+
 export default async function ScannerPage() {
   const [strategies, signals] = await Promise.all([
     apiGet<Strategy[]>("/strategies").catch(() => null),
@@ -60,6 +62,7 @@ export default async function ScannerPage() {
                           {s.setup_code} · {s.setup_name}
                         </span>
                         <StatusBadge status={s.status} />
+                        <ExplainSignal signalId={s.id} />
                       </div>
                     </td>
                     <td className="text-muted-foreground py-2 text-xs">

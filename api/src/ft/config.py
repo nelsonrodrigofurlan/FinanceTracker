@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     supabase_db_url: str = ""
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
+    openrouter_api_key: SecretStr = SecretStr("")
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    ai_model: str = ""
     # IDs (UUID) de usuários autorizados, separados por vírgula. Vazio = ninguém (fail-closed).
     allowed_user_ids: Annotated[frozenset[str], NoDecode] = frozenset()
 

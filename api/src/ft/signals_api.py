@@ -1,18 +1,24 @@
 """Rotas de estratégias, sinais e carteira simulada. Todas exigem usuário autenticado com 2FA."""
 
+import logging
 import math
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, Path
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
+from ft.ai.explain import build_messages, call_model, context_hash, market_context
 from ft.auth import CurrentUser, require_user
+from ft.config import get_settings
 from ft.db.pool import get_pool
 from ft.lab_api import SETUP_NAMES
 from ft.settings_api import UserSettings, load_settings
 
 router = APIRouter(tags=["signals"])
+logger = logging.getLogger("ft.signals_api")
 
 
 class Strategy(BaseModel):
@@ -202,4 +208,146 @@ def sim_book(_user: Annotated[CurrentUser, Depends(require_user)]) -> SimBook:
         closed_count=len(closed),
         total_r=round(sum(t.r_multiple for t in closed), 2),
         win_rate=round(wins / len(closed) * 100, 1) if closed else None,
+    )
+
+
+# --- Explicação por IA ----------------------------------------------------------------------
+
+
+class Explanation(BaseModel):
+    signal_id: int
+    model: str
+    content: str
+    cost_usd: float | None
+    created_at: datetime
+
+
+def _signal_context(conn, signal_id: int) -> dict | None:  # noqa: ANN001
+    row = conn.execute(
+        """
+        select s.ticker, s.signal_date, s.order_kind, s.entry_level, s.ref_price, s.stop,
+               s.stop_distance, s.risk_distance, s.target_r, st.setup_code, st.variant,
+               st.status, st.evidence
+        from ft.signals s join ft.strategies st on st.id = s.strategy_id where s.id = %s
+        """,
+        (signal_id,),
+    ).fetchone()
+    if not row:
+        return None
+    (
+        ticker,
+        day,
+        kind,
+        level,
+        ref,
+        stop,
+        stop_dist,
+        risk_dist,
+        target_r,
+        code,
+        variant,
+        status,
+        evidence,
+    ) = row
+    candles = conn.execute(
+        """
+        select c.date, c.open, c.high, c.low, c.close, c.volume from ft.candles_daily c
+        join ft.assets a on a.id = c.asset_id
+        where a.ticker = %s and c.date <= %s order by c.date desc limit 260
+        """,
+        (ticker, day),
+    ).fetchall()
+    frame = pd.DataFrame(candles[::-1], columns=["date", "open", "high", "low", "close", "volume"])
+    for col in ("open", "high", "low", "close", "volume"):
+        frame[col] = frame[col].astype("float64")
+    ibov = conn.execute(
+        """
+        select c.close from ft.candles_daily c join ft.assets a on a.id = c.asset_id
+        where a.ticker = 'IBOV' and c.date <= %s order by c.date desc limit 200
+        """,
+        (day,),
+    ).fetchall()
+    ibov_regime = (
+        float(ibov[0][0]) > sum(float(v) for (v,) in ibov) / len(ibov) if len(ibov) == 200 else None
+    )
+    return {
+        "ativo": ticker,
+        "data_do_sinal": day,
+        "estrategia": {"codigo": code, "nome": SETUP_NAMES.get(code, code), "variante": variant},
+        "status_da_estrategia": status,
+        "ordem": {
+            "tipo": kind,
+            "nivel_entrada": float(level) if level is not None else None,
+            "preco_referencia": float(ref),
+            "stop": float(stop) if stop is not None else None,
+            "stop_distancia": float(stop_dist) if stop_dist is not None else None,
+            "unidade_risco_sem_stop": float(risk_dist) if risk_dist is not None else None,
+            "alvo_em_R": float(target_r) if target_r is not None else None,
+        },
+        "evidencia_laboratorio": evidence,
+        "contexto_de_mercado": market_context(frame, ibov_regime),
+    }
+
+
+@router.get("/signals/{signal_id}/explain")
+def get_explanation(
+    _user: Annotated[CurrentUser, Depends(require_user)],
+    signal_id: Annotated[int, Path(ge=1)],
+) -> Explanation | None:
+    with get_pool().connection() as conn:
+        row = conn.execute(
+            """
+            select signal_id, model, content, usage, created_at from ft.ai_analyses
+            where signal_id = %s order by created_at desc limit 1
+            """,
+            (signal_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return Explanation(
+        signal_id=row[0],
+        model=row[1],
+        content=row[2],
+        cost_usd=(row[3] or {}).get("cost_usd"),
+        created_at=row[4],
+    )
+
+
+@router.post("/signals/{signal_id}/explain")
+def create_explanation(
+    user: Annotated[CurrentUser, Depends(require_user)],
+    signal_id: Annotated[int, Path(ge=1)],
+) -> Explanation:
+    existing = get_explanation(user, signal_id)
+    if existing is not None:
+        return existing  # uma explicação por sinal: evita custo repetido
+    with get_pool().connection() as conn:
+        context = _signal_context(conn, signal_id)
+        if context is None:
+            raise HTTPException(status_code=404, detail="Sinal não encontrado")
+        try:
+            result = call_model(get_settings(), build_messages(context))
+        except Exception as exc:
+            logger.warning("IA indisponível: %s", type(exc).__name__)
+            raise HTTPException(status_code=503, detail="Explicação indisponível") from exc
+        row = conn.execute(
+            """
+            insert into ft.ai_analyses (signal_id, model, prompt_hash, content, usage)
+            values (%s, %s, %s, %s, %s) returning created_at
+            """,
+            (
+                signal_id,
+                result["model"],
+                context_hash(context),
+                result["content"],
+                Jsonb(result["usage"]),
+            ),
+        ).fetchone()
+        conn.commit()
+    return Explanation(
+        signal_id=signal_id,
+        model=result["model"],
+        content=result["content"],
+        cost_usd=result["usage"].get("cost_usd"),
+        created_at=row[0],
     )

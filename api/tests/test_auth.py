@@ -155,3 +155,8 @@ def test_settings_require_auth_and_validate(client):
 def test_signal_routes_require_auth(client):
     for path in ("/strategies", "/signals/latest", "/sim/book"):
         assert client.get(path).status_code == 401
+
+
+def test_explain_routes_require_auth(client):
+    assert client.get("/signals/1/explain").status_code == 401
+    assert client.post("/signals/1/explain").status_code == 401
