@@ -26,26 +26,33 @@ Repositório **Docker** `finance-tracker`, na região escolhida.
 | `ft-pipeline` | roda os Jobs (pipeline diário e migrations) |
 | `ft-scheduler` | dispara o Job diário |
 
-### 1.4 Segredos (Secret Manager) — um conjunto por ambiente
-Nome = `ft-<ambiente>-<nome>`, com ambiente `staging` ou `production`
-(ex.: `ft-staging-supabase-db-url`). Valor = conteúdo indicado.
+### 1.4 Configuração: híbrida (variáveis do gatilho + 3 segredos)
+**Segredos (Secret Manager)** — só os 3 valores realmente sensíveis, nome `ft-<ambiente>-<nome>`:
 
-| Segredo | Conteúdo | Usado por |
+| Segredo | Conteúdo | Lido por |
 |---|---|---|
-| `supabase-url` | URL do projeto Supabase | web, api, jobs |
-| `supabase-publishable-key` | chave pública (`sb_publishable_…`) | web |
-| `supabase-jwks-url` | `<URL>/auth/v1/.well-known/jwks.json` | api, jobs |
-| `supabase-project-ref` | ref do projeto | api, jobs |
-| `supabase-db-url` | **URL do pooler** (Connect → Connection pooling), não a direta | api, jobs |
-| `allowed-user-ids` | UUID do seu usuário no Supabase daquele ambiente | web, api |
-| `openrouter-api-key` | chave do OpenRouter (exclusiva do FinanceTracker) | api |
-| `ai-model` | `~anthropic/claude-sonnet-latest` | api |
-| `telegram-bot-token` | token do bot | job pipeline |
-| `telegram-chat-id` | seu chat id | job pipeline |
-| `api-url` | URL do serviço `ft-api` (criar **depois** do 1º deploy da API) | web |
+| `ft-<amb>-supabase-db-url` | **URL do pooler** do Supabase (Connect → Session pooler), com a senha | `ft-api`, `ft-pipeline` |
+| `ft-<amb>-openrouter-api-key` | chave do OpenRouter (exclusiva do FinanceTracker) | `ft-api` |
+| `ft-<amb>-telegram-bot-token` | token do bot | `ft-pipeline` |
 
+3 segredos × 2 ambientes = 6 versões ativas = cota grátis do Secret Manager.
+
+**Variáveis do gatilho** (públicas ou inofensivas):
+
+| Variável | Valor |
+|---|---|
+| `_APP_ENV` | `staging` ou `production` |
+| `_SUFFIX` | `-staging` ou vazio (produção) |
+| `_SUPABASE_URL` | URL do projeto Supabase |
+| `_SUPABASE_PUBLISHABLE_KEY` | chave pública `sb_publishable_…` |
+| `_SUPABASE_PROJECT_REF` | ref do projeto |
+| `_ALLOWED_USER_IDS` | UUID do seu usuário naquele Supabase |
+| `_AI_MODEL` | `~anthropic/claude-sonnet-latest` |
+| `_TELEGRAM_CHAT_ID` | seu chat id |
+
+A URL da API é descoberta automaticamente no deploy (não precisa configurar).
 Por que o **pooler**: o endereço direto `db.<ref>.supabase.co` só responde em IPv6 e o
-Cloud Run sai por IPv4. A API já está configurada para o modo transação do pooler.
+Cloud Run sai por IPv4.
 
 ### 1.5 Permissões (mínimas)
 - `ft-api`: *Secret Manager Secret Accessor* **só** nos segredos da API.
@@ -62,17 +69,16 @@ Repositório `nelsonrodrigofurlan/FinanceTracker`, configuração **arquivo do r
 
 | Gatilho | Branch | Substituições |
 |---|---|---|
-| `ft-staging` | `^developer$` | `_APP_ENV=staging`, `_SUFFIX=-staging` |
-| `ft-production` | `^main$` | `_APP_ENV=production`, `_SUFFIX=` **(criar a chave, com valor vazio)** |
+| `ft-staging` | `^developer$` | `_APP_ENV=staging`, `_SUFFIX=-staging` + variáveis do item 1.4 |
+| `ft-production` | `^main$` | `_APP_ENV=production`, `_SUFFIX=` **(criar a chave, vazia)** + variáveis do item 1.4 |
 
 Se `_SUFFIX` não existir no gatilho de produção, vale o default `-staging` (falha segura).
-**[VERIFICAR no 1º build]** `_IMAGE_BASE` usa substituições aninhadas
-(`dynamicSubstitutions: true`).
+`_IMAGE_BASE` usa substituições aninhadas (`dynamicSubstitutions: true`) — confirmado no 1º build.
 
 ### 1.7 Primeiro deploy (ordem)
-1. Criar todos os segredos, **exceto** `api-url`.
-2. Rodar o gatilho de staging → API e Jobs sobem; o Web pode falhar por falta de `api-url`.
-3. Copiar a URL do serviço `ft-api-staging`, criar `ft-staging-api-url` e rodar o gatilho de novo.
+1. Criar os 3 segredos e as variáveis do gatilho.
+2. Rodar o gatilho → migrations, API, Job e Web sobem.
+3. Dar *Cloud Run Invoker* à conta `ft-web` no serviço `ft-api-<amb>` (item 1.5).
 4. Conferir que a API **não** abre no navegador (403) e que o Web abre e faz login.
 
 ### 1.8 Agendamento do pipeline (Cloud Scheduler)
