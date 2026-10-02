@@ -1,7 +1,6 @@
-import { Radar } from "lucide-react";
-
 import { MarketStatusCard } from "@/components/market-status-card";
-import { EmptyState, Metric, PageBody, PageHeader } from "@/components/page";
+import { Metric, PageBody, PageHeader } from "@/components/page";
+import { SignalsCard } from "@/components/signals-card";
 
 export default function PainelPage() {
   return (
@@ -17,13 +16,7 @@ export default function PainelPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <EmptyState
-          className="lg:col-span-2"
-          icon={Radar}
-          title="Sinais de hoje"
-          description="Aqui aparecem os sinais dos setups aprovados no laboratório, com entrada, stop, alvo e a evidência histórica de cada um."
-          phase="Fase 5 · Sinais"
-        />
+        <SignalsCard className="lg:col-span-2" />
         <MarketStatusCard />
       </section>
     </PageBody>
