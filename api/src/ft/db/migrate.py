@@ -9,6 +9,7 @@ Produção exige APP_ENV=production E a flag --allow-production.
 import argparse
 import hashlib
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,13 @@ from ft.db.connection import connect
 
 logger = logging.getLogger("ft.migrate")
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "supabase" / "migrations"
+# No repositório: <raiz>/supabase/migrations. No contêiner: definido por FT_MIGRATIONS_DIR.
+MIGRATIONS_DIR = Path(
+    os.environ.get(
+        "FT_MIGRATIONS_DIR",
+        Path(__file__).resolve().parents[4] / "supabase" / "migrations",
+    )
+)
 
 BOOTSTRAP = """
 create schema if not exists ft;
@@ -54,6 +61,9 @@ def run(status_only: bool, allow_production: bool) -> int:
         return 2
 
     migrations = list_migrations()
+    if not migrations:
+        logger.error("Nenhuma migration encontrada em %s", MIGRATIONS_DIR)
+        return 4
     with connect(settings) as conn:
         conn.execute(BOOTSTRAP)
         conn.commit()

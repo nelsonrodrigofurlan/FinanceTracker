@@ -26,4 +26,10 @@ def assert_db_matches_project(settings: Settings) -> None:
 def connect(settings: Settings | None = None) -> psycopg.Connection:
     settings = settings or get_settings()
     assert_db_matches_project(settings)
-    return psycopg.connect(settings.supabase_db_url, connect_timeout=15, application_name="ft-api")
+    # prepare_threshold=None: compatível com o pooler do Supabase em modo transação (Cloud Run).
+    return psycopg.connect(
+        settings.supabase_db_url,
+        connect_timeout=15,
+        application_name="ft-api",
+        prepare_threshold=None,
+    )

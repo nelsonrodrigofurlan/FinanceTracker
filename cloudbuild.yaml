@@ -1,0 +1,149 @@
+# FinanceTracker — esteira única (um gatilho por branch). Ver infra/SETUP.md.
+#   main      → _APP_ENV=production  _SUFFIX= (vazio)
+#   developer → _APP_ENV=staging     _SUFFIX=-staging
+# Os DEFAULTS apontam para STAGING de propósito: gatilho mal configurado nunca publica em produção.
+#
+# Ordem: testes → imagens → migrations no banco → API (privada) → Job diário → Web.
+# Segredos: Secret Manager, nomes ft-<_APP_ENV>-<nome> (ex.: ft-staging-supabase-db-url).
+
+steps:
+  - id: TesteApi
+    name: python:3.12-slim
+    dir: api
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        pip install --quiet uv==0.11.9 \
+        && uv sync --frozen \
+        && uv run ruff check . \
+        && uv run pytest -q
+
+  - id: TesteWeb
+    name: node:22-bookworm-slim
+    dir: web
+    entrypoint: sh
+    args: ["-c", "npm ci && npm run lint"]
+    waitFor: ["-"]
+
+  - id: ImagemApi
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "api/Dockerfile", "-t", "${_IMAGE_BASE}/ft-api:$COMMIT_SHA", "."]
+    waitFor: ["TesteApi"]
+
+  - id: ImagemWeb
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE_BASE}/ft-web:$COMMIT_SHA", "web"]
+    waitFor: ["TesteWeb"]
+
+  - id: PushApi
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE_BASE}/ft-api:$COMMIT_SHA"]
+    waitFor: ["ImagemApi"]
+
+  - id: PushWeb
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE_BASE}/ft-web:$COMMIT_SHA"]
+    waitFor: ["ImagemWeb"]
+
+  # Migrations: Job dedicado, executado e aguardado antes de publicar o código novo.
+  - id: JobMigrations
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - ft-migrate${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-pipeline@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=python
+      - --args=-m,ft.db.migrate,--allow-production
+      - --set-env-vars=APP_ENV=${_APP_ENV}
+      - --set-secrets=SUPABASE_DB_URL=ft-${_APP_ENV}-supabase-db-url:latest,SUPABASE_PROJECT_REF=ft-${_APP_ENV}-supabase-project-ref:latest
+      - --max-retries=0
+      - --task-timeout=10m
+      - --quiet
+    waitFor: ["PushApi"]
+
+  - id: ExecutarMigrations
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: ["run", "jobs", "execute", "ft-migrate${_SUFFIX}", "--region=${_REGION}", "--wait"]
+    waitFor: ["JobMigrations"]
+
+  - id: Api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ft-api${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-api@$PROJECT_ID.iam.gserviceaccount.com
+      - --no-allow-unauthenticated
+      - --set-env-vars=APP_ENV=${_APP_ENV}
+      - --set-secrets=SUPABASE_URL=ft-${_APP_ENV}-supabase-url:latest,SUPABASE_JWKS_URL=ft-${_APP_ENV}-supabase-jwks-url:latest,SUPABASE_PROJECT_REF=ft-${_APP_ENV}-supabase-project-ref:latest,SUPABASE_DB_URL=ft-${_APP_ENV}-supabase-db-url:latest,ALLOWED_USER_IDS=ft-${_APP_ENV}-allowed-user-ids:latest,OPENROUTER_API_KEY=ft-${_APP_ENV}-openrouter-api-key:latest,AI_MODEL=ft-${_APP_ENV}-ai-model:latest
+      - --memory=1Gi
+      - --min-instances=0
+      - --max-instances=2
+      - --quiet
+    waitFor: ["ExecutarMigrations"]
+
+  - id: JobPipeline
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - ft-pipeline${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-pipeline@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=python
+      - --args=-m,ft.pipeline
+      - --set-env-vars=APP_ENV=${_APP_ENV}
+      - --set-secrets=SUPABASE_URL=ft-${_APP_ENV}-supabase-url:latest,SUPABASE_JWKS_URL=ft-${_APP_ENV}-supabase-jwks-url:latest,SUPABASE_PROJECT_REF=ft-${_APP_ENV}-supabase-project-ref:latest,SUPABASE_DB_URL=ft-${_APP_ENV}-supabase-db-url:latest,TELEGRAM_BOT_TOKEN=ft-${_APP_ENV}-telegram-bot-token:latest,TELEGRAM_CHAT_ID=ft-${_APP_ENV}-telegram-chat-id:latest
+      - --memory=2Gi
+      - --max-retries=1
+      - --task-timeout=45m
+      - --quiet
+    waitFor: ["ExecutarMigrations"]
+
+  - id: Web
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ft-web${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-web:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-web@$PROJECT_ID.iam.gserviceaccount.com
+      - --allow-unauthenticated
+      - --set-env-vars=APP_ENV=${_APP_ENV}
+      - --set-secrets=SUPABASE_URL=ft-${_APP_ENV}-supabase-url:latest,SUPABASE_PUBLISHABLE_KEY=ft-${_APP_ENV}-supabase-publishable-key:latest,ALLOWED_USER_IDS=ft-${_APP_ENV}-allowed-user-ids:latest,API_URL=ft-${_APP_ENV}-api-url:latest,API_AUDIENCE=ft-${_APP_ENV}-api-url:latest
+      - --memory=512Mi
+      - --min-instances=0
+      - --max-instances=2
+      - --quiet
+    waitFor: ["Api", "PushWeb"]
+
+images:
+  - ${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+  - ${_IMAGE_BASE}/ft-web:$COMMIT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true
+
+substitutions:
+  # Região: a MESMA do Supabase de produção (latência banco ↔ app). Ver infra/SETUP.md.
+  _REGION: southamerica-east1
+  _AR_REPO: finance-tracker
+  _IMAGE_BASE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}
+  _APP_ENV: staging
+  _SUFFIX: -staging

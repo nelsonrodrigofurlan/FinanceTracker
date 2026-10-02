@@ -1,0 +1,13 @@
+# Contexto de build da API (raiz do repositório): só o necessário, nunca segredos ou caches.
+**/.env
+**/.env.*
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+api/data
+api/tests
+docs
+.git

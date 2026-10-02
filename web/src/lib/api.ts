@@ -1,6 +1,7 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env";
+import { serverlessAuthHeader } from "@/lib/google-id-token";
 import { createClient } from "@/lib/supabase/server";
 
 export class ApiError extends Error {
@@ -15,7 +16,7 @@ export class ApiError extends Error {
 /**
  * Chamada servidor → API. O navegador nunca fala com a API diretamente.
  * Repassa o JWT do Supabase; a API valida assinatura, aal2 e allowlist.
- * TODO(deploy): no Cloud Run, anexar também o ID token da service account (API privada).
+ * No Cloud Run, anexa também o ID token da conta de serviço (API privada, ver google-id-token).
  */
 export async function apiGet<T>(path: string): Promise<T> {
   const supabase = await createClient();
@@ -24,7 +25,7 @@ export async function apiGet<T>(path: string): Promise<T> {
   if (!token) throw new ApiError(401, path);
 
   const response = await fetch(`${serverEnv.apiUrl()}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...(await serverlessAuthHeader()) },
     cache: "no-store",
   });
   if (!response.ok) throw new ApiError(response.status, path);
@@ -39,7 +40,11 @@ export async function apiSend<T>(path: string, method: "PUT" | "POST", body: unk
 
   const response = await fetch(`${serverEnv.apiUrl()}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(await serverlessAuthHeader()),
+    },
     body: JSON.stringify(body),
     cache: "no-store",
   });

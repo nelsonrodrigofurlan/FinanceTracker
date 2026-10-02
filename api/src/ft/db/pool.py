@@ -17,7 +17,7 @@ def get_pool() -> ConnectionPool:
         min_size=1,
         max_size=4,
         open=True,
-        kwargs={"connect_timeout": 15, "application_name": "ft-api"},
+        kwargs={"connect_timeout": 15, "application_name": "ft-api", "prepare_threshold": None},
         # Descarta conexões quebradas antes de entregar (rede/servidor pode ter caído).
         check=ConnectionPool.check_connection,
         name="ft-api",

@@ -10,7 +10,7 @@ Aplicação pessoal de análise técnica para **swing trade na B3**: laboratóri
 |---|---|
 | `web/` | Frontend Next.js (UI, login, gráficos) |
 | `api/` | FastAPI + engine de setups/backtest + Job diário (`ft.pipeline`) |
-| `infra/` | Cloud Build e guia de setup ([infra/SETUP.md](infra/SETUP.md)) |
+| `infra/` | Guia de setup do deploy ([infra/SETUP.md](infra/SETUP.md)); esteira em `cloudbuild.yaml` |
 | `docs/` | [Visão](docs/VISAO.md) e [Arquitetura](docs/ARQUITETURA.md) |
 
 ## Fluxo de branches

@@ -1,22 +1,27 @@
-# FinanceTracker API + Pipeline Job (mesma imagem, entrypoints diferentes)
-#   Serviço:  CMD padrão (uvicorn)
-#   Job:      gcloud run jobs ... --command=python --args=-m,ft.pipeline
+# FinanceTracker API + Jobs (pipeline diário e migrations) — mesma imagem, entrypoints diferentes.
+# Contexto de build: RAIZ do repositório (docker build -f api/Dockerfile .), para incluir as
+# migrations SQL de supabase/migrations.
+#   Serviço:    CMD padrão (uvicorn)
+#   Pipeline:   --command=python --args=-m,ft.pipeline
+#   Migrations: --command=python --args=-m,ft.db.migrate,--allow-production
 
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.9 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 # Dependências primeiro (cache de camada), versões travadas pelo uv.lock
-COPY pyproject.toml uv.lock ./
+COPY api/pyproject.toml api/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-COPY src ./src
+COPY api/src ./src
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12-slim AS runner
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/app/.venv/bin:$PATH" PORT=8080
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH="/app/.venv/bin:$PATH" PORT=8080 \
+    FT_MIGRATIONS_DIR=/app/migrations
 RUN groupadd --system --gid 1001 app && useradd --system --uid 1001 --gid app --no-create-home app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --chown=app:app supabase/migrations /app/migrations
 USER app
 EXPOSE 8080
 CMD ["sh", "-c", "exec uvicorn ft.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --no-server-header"]
