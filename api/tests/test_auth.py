@@ -160,3 +160,10 @@ def test_signal_routes_require_auth(client):
 def test_explain_routes_require_auth(client):
     assert client.get("/signals/1/explain").status_code == 401
     assert client.post("/signals/1/explain").status_code == 401
+
+
+def test_journal_routes_require_auth(client):
+    assert client.get("/journal").status_code == 401
+    assert client.post("/journal", json={}).status_code == 401
+    assert client.put("/journal/1/close", json={}).status_code == 401
+    assert client.delete("/journal/1").status_code == 401

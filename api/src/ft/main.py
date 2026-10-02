@@ -9,6 +9,7 @@ from ft import __version__
 from ft.auth import CurrentUser, require_user
 from ft.config import get_settings
 from ft.db.pool import close_pool
+from ft.journal_api import router as journal_router
 from ft.lab_api import router as lab_router
 from ft.market_api import router as market_router
 from ft.settings_api import router as settings_router
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(lab_router)
     app.include_router(settings_router)
     app.include_router(signals_router)
+    app.include_router(journal_router)
 
     return app
 

@@ -32,7 +32,11 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiSend<T>(path: string, method: "PUT" | "POST", body: unknown): Promise<T> {
+export async function apiSend<T>(
+  path: string,
+  method: "PUT" | "POST" | "DELETE",
+  body?: unknown,
+): Promise<T> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -45,9 +49,10 @@ export async function apiSend<T>(path: string, method: "PUT" | "POST", body: unk
       "Content-Type": "application/json",
       ...(await serverlessAuthHeader()),
     },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
   if (!response.ok) throw new ApiError(response.status, path);
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
