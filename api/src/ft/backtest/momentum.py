@@ -59,6 +59,17 @@ def build_matrices(bars: dict[str, Bars]) -> tuple[pd.DataFrame, pd.DataFrame]:
     return close, open_
 
 
+def build_eligibility(bars: dict[str, Bars], index: pd.Index) -> pd.DataFrame | None:
+    """Matriz datas × ativos de elegibilidade (universo ponto a ponto); None = todos."""
+    if all(b.tradable is None for b in bars.values()):
+        return None
+    cols = {
+        t: pd.Series(b.tradable if b.tradable is not None else True, index=b.dates)
+        for t, b in bars.items()
+    }
+    return pd.DataFrame(cols).reindex(index).fillna(False).astype(bool)
+
+
 def month_end_positions(dates: list[date]) -> list[int]:
     """Índices do último pregão de cada mês (exceto o mês corrente/incompleto no fim)."""
     out = []
@@ -86,12 +97,18 @@ def simulate(
     cdi: CdiIndex | None,
     regime: dict[date, bool] | None,
     initial: float = 100_000.0,
+    eligible: pd.DataFrame | None = None,
 ) -> pd.Series:
-    """Retorna a curva diária de patrimônio (índice = datas)."""
+    """Retorna a curva diária de patrimônio (índice = datas).
+
+    `eligible` (datas × ativos): só ranqueia ativos elegíveis no dia do rebalanceamento.
+    Ativo que deixa de ser negociado é vendido no último preço disponível.
+    """
     dates = list(close.index)
     rebalance_at = set(month_end_positions(dates))
     unit_cost = costs.fee_pct_per_side + costs.slippage_pct_per_side
     last_close = close.ffill()
+    last_valid = close.apply(lambda col: col.last_valid_index())
 
     cash = initial
     shares: dict[str, float] = {}
@@ -125,6 +142,9 @@ def simulate(
             pending = None
 
         marks = last_close.iloc[i]
+        for t in [t for t in shares if last_valid[t] is not None and day > last_valid[t]]:
+            proceeds = shares.pop(t) * marks[t]  # deixou de negociar: sai no último preço
+            cash += proceeds * (1 - unit_cost)
         equity[i] = cash + sum(q * marks[t] for t, q in shares.items())
 
         if i in rebalance_at:
@@ -132,6 +152,8 @@ def simulate(
                 pending = []
             else:
                 ranked = scores_at(close, i, p.lookback_months)
+                if eligible is not None:
+                    ranked = ranked[eligible.loc[day].reindex(ranked.index).fillna(False)]
                 pending = list(ranked[ranked > 0].index[: p.top_n])
 
     return pd.Series(equity, index=dates)

@@ -51,6 +51,8 @@ class Bars:
     volume: np.ndarray
     # True = mercado em alta (Ibovespa acima da MMA200) no dia; None = sem informação de regime.
     regime: np.ndarray | None = None
+    # True = ação elegível no universo naquele dia (universo ponto a ponto); None = sempre.
+    tradable: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.dates)
@@ -220,6 +222,8 @@ def run_asset(setup: Setup, bars: Bars, costs: Costs, start_idx: int = 0) -> lis
             continue
 
         if pending is None:
+            if bars.tradable is not None and not bars.tradable[t]:
+                continue  # fora do universo naquele dia: sem entradas novas
             if getattr(setup, "regime_filter", False) and (
                 bars.regime is None or not bars.regime[t]
             ):

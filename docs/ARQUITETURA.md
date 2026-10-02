@@ -189,6 +189,25 @@ Classificação por regra (`api/src/ft/signals/strategies.py`), sem escolha manu
 
 Resultado em 2026-10-02: **nenhuma** das 17 variantes em observação. Fora da amostra (mar/2020–set/2026) nenhuma carteira superou o CDI (~10,3% a.a.); melhor caso Donchian 20/10 com 9,6% a.a.
 
+### 7.5 Pesquisa sem viés de sobrevivência (2026-10-02)
+- Base oficial B3 (COTAHIST, layout rev. 13/04/2017), universo ponto a ponto: top-100 de liquidez
+  por mês (21 pregões, ≥15 dias), identidade por ISIN, inclui empresas em recuperação judicial.
+  475 ações no histórico vs 91 no teste antigo; 54% dos meses-membro faltavam antes.
+- Yahoo diverge até ±3% no fechamento antes de ~2017; de 2017 em diante bate com a B3.
+- Ajustes: eventos de ações da API da B3 confirmados pelo preço; saltos sem cadastro com regra
+  rígida (preço ≤4% de um fator comum + volume ±1,5x). Ambíguos no modo **conservador**: queda
+  mantida, alta neutralizada; modo **otimista** (só limite): ambos neutralizados. Sem dividendos.
+- Código: `api/src/ft/research/` (dados só em cache local, fora do git/Supabase).
+
+Resultados (fora da amostra mar/2020–set/2026; CDI ≈ 10,3% a.a.):
+| Estratégia | Base Yahoo (viesada) | B3 conservadora | B3 otimista (limite) |
+|---|---|---|---|
+| Melhor setup de candle (S4 Donchian), carteira | 9,6% a.a. | 0,6% a.a. | — |
+| Momentum, walk-forward 2010–2026 | 10,9% a.a. | 0,8% a.a. | 3,2% a.a. |
+
+Conclusão: nenhuma das 34 variantes de setups de candle nem das 8 de momentum supera o CDI
+quando o universo é ponto a ponto. O ganho aparente vinha do viés de sobrevivência.
+
 ## 8. Modelo de dados (Postgres / Supabase)
 
 ```

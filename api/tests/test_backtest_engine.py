@@ -213,3 +213,11 @@ def test_regime_from_closes():
     closes = pd.Series([10.0, 10.0, 13.0, 8.0], index=[1, 2, 3, 4])
     regime = regime_from_closes(closes, n=2)
     assert regime == {2: False, 3: True, 4: False}  # MMA2: 10, 11.5, 10.5
+
+
+def test_tradable_mask_blocks_entries_outside_universe():
+    bars = make_bars([(10, 10.5, 9.5, 10), (10, 10.6, 9.8, 10.4), (10.4, 11, 10.2, 11)])
+    bars.tradable = np.array([False, True, True])
+    setup = Scripted({0: Order(kind="close", stop=9.0), 1: Order(kind="close", stop=9.0)})
+    [trade] = run_asset(setup, bars, NO_COSTS)
+    assert trade.entry_date == bars.dates[1]

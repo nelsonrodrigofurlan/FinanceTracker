@@ -78,3 +78,25 @@ def test_curve_stats_and_variants():
     assert stats["max_drawdown_pct"] == pytest.approx(20.0)
     assert stats["total_return_pct"] == pytest.approx(21.0)
     assert len(variants()) == 8
+
+
+def test_only_eligible_assets_are_ranked():
+    dates = business_days(date(2020, 1, 1), 70)
+    close = pd.DataFrame(
+        {"UP": np.linspace(10, 20, 70), "FLAT_UP": np.linspace(10, 12, 70)}, index=dates
+    )
+    eligible = pd.DataFrame({"UP": False, "FLAT_UP": True}, index=dates)
+    p = MomentumParams(lookback_months=2, top_n=1)
+    curve = simulate(close, close, p, NO_COSTS, None, None, eligible=eligible)
+    # comprou FLAT_UP (UP fora do universo): resultado acompanha FLAT_UP, não UP
+    assert curve.iloc[-1] < 100_000 * 20 / 15
+
+
+def test_delisted_position_is_sold_at_last_price():
+    dates = business_days(date(2020, 1, 1), 70)
+    gone = np.linspace(10, 20, 70)
+    gone[55:] = np.nan  # deixa de negociar no pregão 55
+    close = pd.DataFrame({"GONE": gone}, index=dates)
+    p = MomentumParams(lookback_months=2, top_n=1)
+    curve = simulate(close, close, p, NO_COSTS, None, None)
+    assert curve.iloc[-1] == pytest.approx(curve.iloc[56])  # patrimônio congelado em caixa

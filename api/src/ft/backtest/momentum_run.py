@@ -6,12 +6,19 @@ Uso (a partir de `api/`):
 
 import logging
 import sys
+from datetime import timedelta
 
 import pandas as pd
 
 from ft.backtest.data import load_regime, load_universe
 from ft.backtest.engine import Costs
-from ft.backtest.momentum import build_matrices, curve_stats, simulate, variants
+from ft.backtest.momentum import (
+    build_eligibility,
+    build_matrices,
+    curve_stats,
+    simulate,
+    variants,
+)
 from ft.backtest.portfolio import CdiIndex
 from ft.backtest.run import PERIOD_START, split_date
 from ft.config import get_settings
@@ -54,26 +61,38 @@ def walk_forward(yearly: dict[str, dict[int, float]], first_year: int) -> list[d
     return rows
 
 
-def run() -> int:
+def run(base: str = "yahoo", mode: str = "conservative") -> int:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level, format="%(message)s")
     costs = Costs()
     with connect(settings) as conn:
-        bars, info = load_universe(conn, PERIOD_START)
+        if base == "b3":
+            from ft.research.dataset import build
+
+            data = build(mode=mode)
+            bars = data.bars
+            info = {"note": "Base B3 ponto a ponto, conservadora (ver ft/research/dataset.py)."}
+            logger.info("base B3: %s", {k: v for k, v in data.report.items() if k != "regras"})
+        else:
+            bars, info = load_universe(conn, PERIOD_START)
         regime = load_regime(conn, PERIOD_START)
         cdi = CdiIndex(repo.cdi_rates(conn, PERIOD_START))
         bova = repo.benchmark_adj_close(conn, "BOVA11", PERIOD_START)
 
     close, open_ = build_matrices(bars)
+    close = close[[d >= PERIOD_START - timedelta(days=400) for d in close.index]]
+    open_ = open_.reindex(close.index)
+    eligible = build_eligibility(bars, close.index)
     dates = list(close.index)
     end = dates[-1]
+    start = next(d for d in dates if d >= PERIOD_START)  # antes disso: só aquecimento
     split = split_date(PERIOD_START, end)
     cdi_c = pd.Series([cdi.at(d) for d in dates], index=dates)
     bova_c = pd.Series(bova).sort_index()
 
-    periods = {"total": (dates[0], end), "dentro": (dates[0], split), "fora": (split, end)}
+    periods = {"total": (start, end), "dentro": (start, split), "fora": (split, end)}
     logger.info(
-        "universo %d ações | %s a %s | fora da amostra desde %s", len(bars), dates[0], end, split
+        "universo %d ações | %s a %s | fora da amostra desde %s", len(bars), start, end, split
     )
     for name, (a, b) in periods.items():
         c = curve_stats(cdi_c, a, b)
@@ -90,7 +109,8 @@ def run() -> int:
     yearly: dict[str, dict[int, float]] = {}
     logger.info("\n%-32s %18s %18s %18s", "variante", "total", "dentro", "fora")
     for p in variants():
-        curve = simulate(close, open_, p, costs, cdi, regime)
+        curve = simulate(close, open_, p, costs, cdi, regime, eligible=eligible)
+        curve = curve[[d >= start for d in curve.index]]
         yearly[p.name()] = yearly_returns(curve)
         cells = []
         for a, b in periods.values():
@@ -99,7 +119,7 @@ def run() -> int:
         logger.info("%-32s %18s %18s %18s", p.name(), *cells)
 
     cdi_y = yearly_returns(cdi_c)
-    wf = walk_forward(yearly, dates[0].year + 1)  # primeiro ano incompleto (aquecimento)
+    wf = walk_forward(yearly, start.year)
     acc = acc_cdi = 1.0
     beat = 0
     logger.info("\nwalk-forward (escolhe pelo retorno dos %d anos anteriores):", WF_LOOKBACK_YEARS)
@@ -130,4 +150,10 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Pesquisa de momentum")
+    parser.add_argument("--base", choices=["yahoo", "b3"], default="yahoo")
+    parser.add_argument("--modo", choices=["conservative", "optimistic"], default="conservative")
+    args = parser.parse_args()
+    sys.exit(run(args.base, args.modo))
