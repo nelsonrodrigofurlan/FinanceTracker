@@ -63,4 +63,10 @@ def fetch_cdi(
                     time.sleep(pause_seconds * attempt)  # instabilidade do servidor do BCB
                     continue
                 raise
+            except (urllib.error.URLError, TimeoutError):
+                # Falha de rede/DNS (ex.: 03/10/2026 api.bcb.gov.br sumiu do DNS por um período).
+                if attempt < retries:
+                    time.sleep(pause_seconds * attempt)
+                    continue
+                raise
     return result

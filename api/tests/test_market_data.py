@@ -219,3 +219,40 @@ def test_bcb_chunks_respect_10_year_limit():
     assert blocks[-1][1] == date(2026, 10, 2)
     assert all((b - a).days < 10 * 365 for a, b in blocks)
     assert all(blocks[i][1] + timedelta(days=1) == blocks[i + 1][0] for i in range(len(blocks) - 1))
+
+
+def test_bcb_retries_network_errors_then_succeeds(monkeypatch):
+    import io
+    import urllib.error
+
+    from ft.data import bcb
+
+    calls = {"n": 0}
+
+    def fake_urlopen(request, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.URLError("[Errno -2] Name or service not known")
+        return io.BytesIO(b'[{"data": "02/10/2026", "valor": "0.055131"}]')
+
+    monkeypatch.setattr(bcb.urllib.request, "urlopen", fake_urlopen)
+    rates = bcb.fetch_cdi(date(2026, 10, 2), date(2026, 10, 2), pause_seconds=0)
+    assert calls["n"] == 2
+    assert rates == {date(2026, 10, 2): pytest.approx(0.055131)}
+
+
+def test_bcb_network_error_raises_after_retries(monkeypatch):
+    import urllib.error
+
+    from ft.data import bcb
+
+    calls = {"n": 0}
+
+    def fake_urlopen(request, timeout):
+        calls["n"] += 1
+        raise urllib.error.URLError("[Errno -2] Name or service not known")
+
+    monkeypatch.setattr(bcb.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(urllib.error.URLError):
+        bcb.fetch_cdi(date(2026, 10, 2), date(2026, 10, 2), retries=3, pause_seconds=0)
+    assert calls["n"] == 3
