@@ -23,7 +23,8 @@ __pycache__/
 *.egg-info/
 
 # Dados locais / cache de backtest
-data/cache/
+**/data/cache/
+*.pkl
 *.parquet
 
 # Supabase CLI

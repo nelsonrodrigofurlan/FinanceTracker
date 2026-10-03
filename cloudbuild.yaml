@@ -1,0 +1,153 @@
+# FinanceTracker — esteira única (um gatilho por branch). Ver infra/SETUP.md.
+#   main      → _APP_ENV=production  _SUFFIX= (vazio)
+#   developer → _APP_ENV=staging     _SUFFIX=-staging
+# Os DEFAULTS apontam para STAGING de propósito: gatilho mal configurado nunca publica em produção.
+#
+# Ordem: testes → imagens → migrations no banco → API (privada) → Job diário → Web.
+# Configuração híbrida (decisão do usuário, 2026-10-02):
+#   - valores públicos/inofensivos: variáveis do gatilho (_SUPABASE_URL, _ALLOWED_USER_IDS, ...)
+#   - 3 segredos reais no Secret Manager: ft-<_APP_ENV>-supabase-db-url,
+#     ft-<_APP_ENV>-openrouter-api-key, ft-<_APP_ENV>-telegram-bot-token
+# Variáveis de ambiente usam o delimitador ^@^ do gcloud (valores podem conter vírgula).
+
+steps:
+  - id: TesteApi
+    name: python:3.12-slim
+    dir: api
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        pip install --quiet uv==0.11.9 \
+        && uv sync --frozen \
+        && uv run ruff check . \
+        && uv run pytest -q
+
+  - id: TesteWeb
+    name: node:22-bookworm-slim
+    dir: web
+    entrypoint: sh
+    args: ["-c", "npm ci && npm run lint"]
+    waitFor: ["-"]
+
+  - id: ImagemApi
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "api/Dockerfile", "-t", "${_IMAGE_BASE}/ft-api:$COMMIT_SHA", "."]
+    waitFor: ["TesteApi"]
+
+  - id: ImagemWeb
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE_BASE}/ft-web:$COMMIT_SHA", "web"]
+    waitFor: ["TesteWeb"]
+
+  - id: PushApi
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE_BASE}/ft-api:$COMMIT_SHA"]
+    waitFor: ["ImagemApi"]
+
+  - id: PushWeb
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE_BASE}/ft-web:$COMMIT_SHA"]
+    waitFor: ["ImagemWeb"]
+
+  # Migrations: Job dedicado, executado e aguardado antes de publicar o código novo.
+  - id: JobMigrations
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - ft-migrate${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-pipeline@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=python
+      - --args=-m,ft.db.migrate,--allow-production
+      - --set-env-vars=^@^APP_ENV=${_APP_ENV}@SUPABASE_PROJECT_REF=${_SUPABASE_PROJECT_REF}
+      - --set-secrets=SUPABASE_DB_URL=ft-${_APP_ENV}-supabase-db-url:latest
+      - --max-retries=0
+      - --task-timeout=10m
+      - --quiet
+    waitFor: ["PushApi"]
+
+  - id: ExecutarMigrations
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: ["run", "jobs", "execute", "ft-migrate${_SUFFIX}", "--region=${_REGION}", "--wait"]
+    waitFor: ["JobMigrations"]
+
+  - id: Api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ft-api${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-api@$PROJECT_ID.iam.gserviceaccount.com
+      - --no-allow-unauthenticated
+      - --set-env-vars=^@^APP_ENV=${_APP_ENV}@SUPABASE_URL=${_SUPABASE_URL}@SUPABASE_JWKS_URL=${_SUPABASE_URL}/auth/v1/.well-known/jwks.json@SUPABASE_PROJECT_REF=${_SUPABASE_PROJECT_REF}@ALLOWED_USER_IDS=${_ALLOWED_USER_IDS}@AI_MODEL=${_AI_MODEL}
+      - --set-secrets=SUPABASE_DB_URL=ft-${_APP_ENV}-supabase-db-url:latest,OPENROUTER_API_KEY=ft-${_APP_ENV}-openrouter-api-key:latest
+      - --memory=1Gi
+      - --min-instances=0
+      - --max-instances=2
+      - --quiet
+    waitFor: ["ExecutarMigrations"]
+
+  - id: JobPipeline
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - ft-pipeline${_SUFFIX}
+      - --image=${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+      - --region=${_REGION}
+      - --service-account=ft-pipeline@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=python
+      - --args=-m,ft.pipeline
+      - --set-env-vars=^@^APP_ENV=${_APP_ENV}@SUPABASE_URL=${_SUPABASE_URL}@SUPABASE_JWKS_URL=${_SUPABASE_URL}/auth/v1/.well-known/jwks.json@SUPABASE_PROJECT_REF=${_SUPABASE_PROJECT_REF}@TELEGRAM_CHAT_ID=${_TELEGRAM_CHAT_ID}
+      - --set-secrets=SUPABASE_DB_URL=ft-${_APP_ENV}-supabase-db-url:latest,TELEGRAM_BOT_TOKEN=ft-${_APP_ENV}-telegram-bot-token:latest
+      - --memory=2Gi
+      - --max-retries=1
+      - --task-timeout=45m
+      - --quiet
+    waitFor: ["ExecutarMigrations"]
+
+  # Web: descobre a URL da API recém-publicada (sem passo manual) e a usa como audience do token.
+  - id: Web
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        API_URL=$$(gcloud run services describe ft-api${_SUFFIX} --region=${_REGION} --format='value(status.url)')
+        gcloud run deploy ft-web${_SUFFIX}           --image=${_IMAGE_BASE}/ft-web:$COMMIT_SHA           --region=${_REGION}           --service-account=ft-web@$PROJECT_ID.iam.gserviceaccount.com           --allow-unauthenticated           "--set-env-vars=^@^APP_ENV=${_APP_ENV}@SUPABASE_URL=${_SUPABASE_URL}@SUPABASE_PUBLISHABLE_KEY=${_SUPABASE_PUBLISHABLE_KEY}@ALLOWED_USER_IDS=${_ALLOWED_USER_IDS}@API_URL=$${API_URL}@API_AUDIENCE=$${API_URL}"           --memory=512Mi           --min-instances=0           --max-instances=2           --quiet
+    waitFor: ["Api", "PushWeb"]
+
+images:
+  - ${_IMAGE_BASE}/ft-api:$COMMIT_SHA
+  - ${_IMAGE_BASE}/ft-web:$COMMIT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true
+
+substitutions:
+  # Região: a MESMA do Supabase de produção (latência banco ↔ app). Ver infra/SETUP.md.
+  _REGION: southamerica-east1
+  _AR_REPO: finance-tracker
+  _IMAGE_BASE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}
+  _APP_ENV: staging
+  _SUFFIX: -staging
+  # Preenchidas no GATILHO (valores públicos/inofensivos; segredos ficam no Secret Manager).
+  _SUPABASE_URL: ""
+  _SUPABASE_PUBLISHABLE_KEY: ""
+  _SUPABASE_PROJECT_REF: ""
+  _ALLOWED_USER_IDS: ""
+  _AI_MODEL: ""
+  _TELEGRAM_CHAT_ID: ""

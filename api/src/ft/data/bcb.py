@@ -1,0 +1,72 @@
+"""CDI diário do Banco Central (SGS, série 12) — fonte oficial e gratuita.
+
+Verificado em 2026-10-02:
+- URL: https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=dd/mm/aaaa&dataFinal=dd/mm/aaaa
+- Valor em % ao dia útil (ex.: "0.064893" em 03/01/2005).
+- Séries diárias aceitam janela de no máximo 10 anos por consulta (HTTP 406 acima disso).
+- Intervalo sem dado publicado (ex.: CDI de ontem antes da divulgação) responde HTTP 404 com
+  "Value(s) not found" — tratado como "nada novo", não como erro.
+"""
+
+import json
+import time
+import urllib.error
+import urllib.request
+from datetime import date, datetime, timedelta
+
+URL = (
+    "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados"
+    "?formato=json&dataInicial={start}&dataFinal={end}"
+)
+CHUNK_YEARS = 5
+
+
+def parse(payload: list[dict]) -> dict[date, float]:
+    out: dict[date, float] = {}
+    for item in payload:
+        day = datetime.strptime(item["data"], "%d/%m/%Y").date()
+        rate = float(item["valor"])
+        if not 0 <= rate < 1:  # % ao dia; acima de 1%/dia é dado corrompido
+            raise ValueError(f"CDI fora da faixa esperada em {day}: {rate}")
+        out[day] = rate
+    return out
+
+
+def chunks(start: date, end: date, years: int = CHUNK_YEARS) -> list[tuple[date, date]]:
+    """Blocos por ano-calendário (evita problema com 29/02) dentro do limite de 10 anos."""
+    out = []
+    cursor = start
+    while cursor <= end:
+        stop = min(date(cursor.year + years - 1, 12, 31), end)
+        out.append((cursor, stop))
+        cursor = stop + timedelta(days=1)
+    return out
+
+
+def fetch_cdi(
+    start: date, end: date, timeout: float = 30, retries: int = 3, pause_seconds: float = 5.0
+) -> dict[date, float]:
+    result: dict[date, float] = {}
+    for a, b in chunks(start, end):
+        url = URL.format(start=a.strftime("%d/%m/%Y"), end=b.strftime("%d/%m/%Y"))
+        request = urllib.request.Request(url, headers={"User-Agent": "FinanceTracker/0.1"})  # noqa: S310
+        for attempt in range(1, retries + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+                    result.update(parse(json.load(response)))
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")
+                if exc.code == 404 and "not found" in body.lower():
+                    break  # sem dado publicado no intervalo
+                if exc.code >= 500 and attempt < retries:
+                    time.sleep(pause_seconds * attempt)  # instabilidade do servidor do BCB
+                    continue
+                raise
+            except (urllib.error.URLError, TimeoutError):
+                # Falha de rede/DNS (ex.: 03/10/2026 api.bcb.gov.br sumiu do DNS por um período).
+                if attempt < retries:
+                    time.sleep(pause_seconds * attempt)
+                    continue
+                raise
+    return result
